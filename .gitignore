@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+deck/png_*/
+deck/idea1.pptx
+deck/template.pptx
+deck/qr_repo.png
+deck/dump.py
+CLAUDE.md
+CONTEXT.md
+ps-counts-*.md
