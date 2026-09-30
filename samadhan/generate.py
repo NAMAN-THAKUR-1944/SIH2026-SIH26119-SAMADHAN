@@ -21,7 +21,7 @@ import scipy.sparse as sp
 
 from .lp import LP
 
-# Benchmark sizes used in the README, the deck and bench_final.py (always generated with seed=7).
+# Benchmark sizes used in the README, the deck and benchmarks/lp.py (always generated with seed=7).
 REFINERY_SIZES = {
     "S":  dict(R=4,  C=8,  P=6, D=60,  T=6),    # 13k variables
     "M":  dict(R=8,  C=10, P=6, D=150, T=12),   # 110k
@@ -66,7 +66,7 @@ def refinery_lp(R=4, C=8, P=6, D=40, T=6, seed=0, quad=0.0):
         for r in range(R):
             cost[[X(c, r, t) for t in range(T)]] = crude_price[c]
     idx = np.arange(ns)
-    t_i = idx % T; d_i = (idx // T) % D; r_i = (idx // (T * D)) % R
+    d_i = (idx // T) % D; r_i = (idx // (T * D)) % R
     cost[os_:os_ + ns] = freight[r_i, d_i]
     cost[oI:oI + nI] = 0.15
     cost[oz:oz + nz] = 400.0

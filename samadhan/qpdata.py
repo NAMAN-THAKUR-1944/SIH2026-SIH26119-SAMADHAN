@@ -12,7 +12,10 @@ BIG = 1e19   # the files use +-1e20 for infinity, some stored as -9.999999999999
 
 
 def read_maros(path, name=None):
-    d = sio.loadmat(path)
+    try:
+        d = sio.loadmat(path, spmatrix=False)      # SciPy >= 1.15: explicit sparse-array return type
+    except TypeError:
+        d = sio.loadmat(path)
     P = sp.csr_matrix(d["P"], dtype=float)
     q = np.asarray(d["q"], float).ravel()
     r = float(np.asarray(d["r"]).ravel()[0]) if "r" in d else 0.0

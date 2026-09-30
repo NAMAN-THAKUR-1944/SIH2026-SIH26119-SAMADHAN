@@ -1,8 +1,8 @@
 """Reference solve with HiGHS (open-source), used ONLY as the benchmark comparator."""
 import time
 
-import numpy as np
 import highspy
+import numpy as np
 import scipy.sparse as sp
 
 from .lp import LP

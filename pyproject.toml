@@ -1,14 +1,15 @@
 [project]
 name = "samadhan"
 version = "0.1.0"
-description = "Sovereign GPU-accelerated optimization solver (SIH 2026, PS SIH26119)"
+description = "Sovereign optimization solver for LP, QP and MILP: GPU engine + C++ core (SIH 2026, PS SIH26119)"
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.10"
-dependencies = ["numpy>=2.0", "scipy>=1.12", "torch>=2.4"]
+dependencies = ["numpy>=2.0", "scipy>=1.12", "torch>=2.4", "ziglang>=0.13"]
 
 [project.optional-dependencies]
 bench = ["highspy>=1.7"]
-test = ["highspy>=1.7", "pytest>=8"]
+test = ["highspy>=1.7", "pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
 samadhan = "samadhan.__main__:main"
@@ -19,3 +20,12 @@ packages = ["samadhan"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore:.*[Ss]parse.*:UserWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E9", "F", "B", "I", "UP", "SIM"]
+# E701/E702: short `a; b` pairs are used deliberately in numeric code; SIM108: ternaries kept readable
+ignore = ["E701", "E702", "SIM108", "UP015", "B905"]

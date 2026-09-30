@@ -1,12 +1,12 @@
-"""Benchmark behind the README table and the SIH26119 deck -> results/final.json.
+"""Benchmark behind the README table and the SIH26119 deck -> results/lp_refinery.json.
 
 For every refinery planning LP size and two accuracy targets (1e-4 and 1e-6 relative KKT), SAMADHAN runs both
 of its GPU methods (adaptive-step PDLP, and constant-step PDLP replayed as CUDA graphs). HiGHS runs both of its
 methods (dual simplex, the default, and interior point). Each solver is credited with its faster method; every
 raw timing is kept.
 
-    python bench_final.py                  # all sizes (HiGHS simplex on XL alone takes 15 min)
-    python bench_final.py M L --reuse-highs  # rerun SAMADHAN only, keep HiGHS timings from results/final.json
+    python -m benchmarks.lp                  # all sizes (HiGHS simplex on XL alone takes 15 min)
+    python -m benchmarks.lp M L --reuse-highs  # rerun SAMADHAN only, keep HiGHS timings from results/lp_refinery.json
 """
 import argparse
 import json
@@ -16,7 +16,7 @@ from samadhan.baseline import solve_highs
 from samadhan.generate import BENCH_SEED, REFINERY_SIZES, refinery_lp
 from samadhan.pdlp import PDLP
 
-OUT = Path("results/final.json")
+OUT = Path(__file__).resolve().parent.parent / "results" / "lp_refinery.json"
 
 
 def run_highs(lp, time_limit):

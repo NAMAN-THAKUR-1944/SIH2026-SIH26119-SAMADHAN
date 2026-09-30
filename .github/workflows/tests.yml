@@ -20,7 +20,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install numpy scipy highspy pytest ziglang
+          pip install numpy scipy highspy pytest ziglang ruff
+      - name: Lint
+        run: ruff check samadhan tests benchmarks docs
       - name: Build the C++ core
         run: python -c "from samadhan.core import build; print(build())"
       - name: Run tests

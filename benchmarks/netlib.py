@@ -1,7 +1,7 @@
 """Netlib LP benchmark: SAMADHAN (own MPS reader + PDLP) vs HiGHS reading the same file itself.
 
 Runs each model in a worker process (1 torch thread each) so several small models solve in parallel.
-Usage: python bench_netlib.py [--device cpu] [--tol 1e-4] [--time-limit 60] [--workers 6]
+Usage: python -m benchmarks.netlib [--device cpu] [--tol 1e-4] [--time-limit 60] [--workers 6]
 """
 import argparse
 import glob
@@ -9,21 +9,27 @@ import json
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+
+OUT = Path(__file__).resolve().parent.parent / "results" / "lp_netlib.json"
 
 
 def run_one(path, device, tol, time_limit):
     import torch
     torch.set_num_threads(1)
     import highspy
+
+    from samadhan.baseline import solve_highs
     from samadhan.mps import read_mps
     from samadhan.pdlp import solve
-    from samadhan.baseline import solve_highs
 
     name = os.path.basename(path).split(".")[0]
     out = dict(name=name)
     try:
         # HiGHS reads the raw file itself: independent check of our parser
-        import gzip, shutil, tempfile
+        import gzip
+        import shutil
+        import tempfile
         tmp = os.path.join(tempfile.gettempdir(), f"samadhan_{name}.mps")
         with gzip.open(path, "rb") as src, open(tmp, "wb") as dst:
             shutil.copyfileobj(src, dst)
@@ -65,8 +71,7 @@ def main():
             print(f"{r['name']:10} {r.get('status', 'ERR'):>15}  n={r.get('n', 0):6}  "
                   f"objdiff={r.get('obj_rel_diff', float('nan')):.1e}  parser={r.get('parser_obj_diff', float('nan')):.0e}  "
                   f"t={r.get('time', 0):6.1f}s  {r.get('error', '')}", flush=True)
-            json.dump(sorted(results, key=lambda x: x["name"]),
-                      open(f"results/netlib_{a.device}_tol{a.tol:g}.json", "w"), indent=1)
+            OUT.write_text(json.dumps(sorted(results, key=lambda x: x["name"]), indent=1))
     ok = [r for r in results if r.get("status") == "optimal"]
     print(f"\nsolved {len(ok)}/{len(results)} to relative KKT {a.tol:g}")
 

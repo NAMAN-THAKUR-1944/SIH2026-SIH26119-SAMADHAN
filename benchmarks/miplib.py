@@ -1,7 +1,7 @@
 """MIPLIB 3 benchmark: SAMADHAN C++ branch-and-cut vs HiGHS, same time limit and gap, one thread each.
 
     git clone https://github.com/coin-or-tools/Data-miplib3 data/miplib3
-    python bench_miplib.py [--time-limit 60] [--workers 6]      -> results/miplib.json
+    python -m benchmarks.miplib [--time-limit 60] [--workers 6]      -> results/milp_miplib3.json
 """
 import argparse
 import glob
@@ -12,6 +12,9 @@ import shutil
 import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+
+OUT = Path(__file__).resolve().parent.parent / "results" / "milp_miplib3.json"
 
 MAX_ROWS = 1500   # the prototype keeps a dense basis inverse
 
@@ -19,6 +22,7 @@ MAX_ROWS = 1500   # the prototype keeps a dense basis inverse
 def run_one(path, time_limit, gap):
     import highspy
     import numpy as np
+
     from samadhan.core import solve_core
     from samadhan.mps import read_mps
 
@@ -84,7 +88,7 @@ def main():
                   f"{s.get('obj', float('nan')):>14.6g} {s.get('time', 0):6.1f}s  | "
                   f"HiGHS {h.get('status', '-')[:18]:18} {h.get('obj', float('nan')):>14.6g} {h.get('time', 0):6.1f}s"
                   f"  parser={r.get('parser_match')}", flush=True)
-            json.dump(sorted(res, key=lambda x: x["name"]), open("results/miplib.json", "w"), indent=1)
+            OUT.write_text(json.dumps(sorted(res, key=lambda x: x["name"]), indent=1, default=float))
     ran = [r for r in res if "samadhan" in r]
     opt = [r for r in ran if r["samadhan"]["status"] == "optimal"]
     ok = [r for r in opt if r.get("obj_rel_diff", 1) <= 1e-4]

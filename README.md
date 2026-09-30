@@ -111,52 +111,56 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
 python -m venv .venv
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128   # or /whl/cpu
 .venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/python -m pytest                                  # correctness suite (~30 s)
+.venv/Scripts/python -m pytest                                  # 27 correctness tests, ~20 s
 .venv/Scripts/python -m samadhan demo --size XL --tol 1e-6      # 1.16M-variable refinery LP on the GPU
-.venv/Scripts/python -m samadhan solve model.mps --tol 1e-6 --method graph
+.venv/Scripts/python -m samadhan solve model.mps                # LP -> GPU engine, MILP -> C++ core
+.venv/Scripts/python -m samadhan solve model.mps --engine core  # force the C++ dual simplex / branch-and-cut
 ```
 
 ```python
-from samadhan.mps import read_mps
-from samadhan.pdlp import PDLP            # GPU LP / QP
-from samadhan.core import solve_core      # C++ dual simplex / branch-and-cut (compiled on first use)
+from samadhan import read_mps, solve, solve_core
 
 lp = read_mps("model.mps")
-print(PDLP(lp, "cuda").solve(tol=1e-6).primal_obj)   # LP or QP (set lp.Q)
-print(solve_core(lp, time_limit=60).obj)             # LP or MILP (integer markers in the MPS file)
+print(solve(lp, device="cuda", tol=1e-6).primal_obj)   # GPU engine: LP, or QP when lp.Q is set
+print(solve_core(lp, time_limit=60).obj)               # C++ core: LP or MILP (integer markers in the file)
 ```
 
-The C++ core is compiled automatically with the zig toolchain (`pip install ziglang`), so no system
-compiler is needed. CI builds it and runs the tests on Ubuntu and Windows.
+The C++ core is compiled automatically on first use with the zig toolchain (installed from PyPI with the
+requirements), so no system compiler is needed. CI lints the code, builds the core and runs the tests on
+Ubuntu and Windows for every push.
 
 ## Reproduce every number
 
+Run from the repository root; each script writes the raw results used in this README.
+
 ```bash
-python bench_final.py                    # refinery LP table           -> results/final.json
-python bench_milp.py                     # refinery MILPs vs HiGHS     -> results/milp.json
+python -m benchmarks.lp                  # refinery LP table              -> results/lp_refinery.json
+python -m benchmarks.milp                # refinery MILPs, both engines   -> results/milp_refinery.json
 git clone https://github.com/coin-or-tools/Data-Netlib  data/netlib
-python bench_netlib.py                   # Netlib                      -> results/netlib_cpu_tol0.0001.json
+python -m benchmarks.netlib              # Netlib LPs                     -> results/lp_netlib.json
 git clone https://github.com/coin-or-tools/Data-miplib3 data/miplib3
-python bench_miplib.py                   # MIPLIB 3                    -> results/miplib.json
+python -m benchmarks.miplib              # MIPLIB 3                       -> results/milp_miplib3.json
 # Maros-Meszaros .mat files (< 300 KB) from github.com/qpsolvers/maros_meszaros_qpbenchmark -> data/maros/
-python bench_qp.py maros                 # Maros-Meszaros QPs          -> results/qp_maros.json
-python bench_qp.py refinery              # refinery QP                 -> results/qp_refinery.json
+python -m benchmarks.qp maros            # Maros-Meszaros QPs             -> results/qp_maros.json
+python -m benchmarks.qp refinery --time-limit 600   # refinery QP (GPU)  -> results/qp_refinery.json
 python docs/make_figures.py              # the figures above
 ```
 
 ## Project layout
 
 ```
-samadhan/pdlp.py      GPU LP/QP engine (restarted PDHG, adaptive + CUDA-graph modes)
-samadhan/core.py      ctypes binding for the C++ core, builds it with zig on first use
-cpp/samadhan_core.cpp C++17 dual simplex + branch-and-cut (C ABI)
-samadhan/mps.py       MPS reader (free / fixed format, RANGES, bounds, integer markers)
-samadhan/qpdata.py    Maros-Meszaros .mat reader
-samadhan/simplex.py   reference dense simplex + samadhan/milp.py reference B&B (pure Python)
-samadhan/generate.py  refinery LP / QP / MILP generators
-samadhan/baseline.py  HiGHS referee (LP, QP, MILP)
-tests/                pytest suite, every component checked against HiGHS or a hand-computed optimum
-bench_*.py, results/  benchmarks and their raw outputs;  docs/  deck and figures
+samadhan/            the solver package
+  pdlp.py            GPU engine for LP and QP (restarted PDHG, adaptive and CUDA-graph modes)
+  core.py            binding for the C++ core; compiles it with zig on first use
+  mps.py, qpdata.py  model readers: MPS (free / fixed format, RANGES, integer markers), Maros-Meszaros .mat
+  simplex.py, milp.py  pure-Python reference simplex and branch-and-bound, used to cross-check the C++ core
+  generate.py        refinery planning LP / QP / MILP generators
+  baseline.py        HiGHS referee (LP, QP, MILP), used only for benchmarks and tests
+  __main__.py        command line: python -m samadhan
+cpp/samadhan_core.cpp  C++17 dual simplex and branch-and-cut (C ABI)
+benchmarks/          one script per benchmark; results/ holds their raw JSON output
+tests/               pytest suite: every component checked against HiGHS or a hand-computed optimum
+docs/                idea deck (PDF), figures and the script that draws them
 ```
 
 ## How it works

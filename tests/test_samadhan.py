@@ -16,6 +16,7 @@ from samadhan.pdlp import PDLP
 from samadhan.simplex import solve_lp_dense
 
 TINY = Path(__file__).with_name("tiny.mps")
+TINY_MILP = Path(__file__).with_name("tiny_milp.mps")
 DEVICES = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
 
 
@@ -91,6 +92,28 @@ def test_core_milp_without_cuts():
     assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
 
 
+def test_core_tiny_milp_integer_optimum():
+    """The LP relaxation gives x = 3, y = 1.5 (-21); the integer optimum is x = 4, y = 0 (-20)."""
+    from samadhan.core import solve_core
+    lp = read_mps(TINY_MILP)
+    assert lp.integer is not None and lp.integer.all()
+    r = solve_core(lp)
+    assert r.status == "optimal" and r.obj == pytest.approx(-20.0) and r.x == pytest.approx([4.0, 0.0])
+
+
+def test_cli_routes_milp_to_core(capsys):
+    from samadhan.__main__ import main
+    assert main(["solve", str(TINY_MILP), "--quiet"]) == 0
+    out = capsys.readouterr().out
+    assert "C++ core" in out and "-20" in out
+
+
+def test_cli_lp_on_cpu(capsys):
+    from samadhan.__main__ import main
+    assert main(["solve", str(TINY), "--device", "cpu", "--tol", "1e-8", "--quiet"]) == 0
+    assert "GPU engine" in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------- QP (restarted PDHG with a quadratic term)
 @pytest.mark.parametrize("device", DEVICES)
 def test_qp_refinery_matches_highs(device):
@@ -105,6 +128,7 @@ def test_maros_reader_infinity_encoding(tmp_path):
     import numpy as np
     import scipy.io as sio
     import scipy.sparse as sp
+
     from samadhan.qpdata import read_maros
     f = tmp_path / "t.mat"
     sio.savemat(f, dict(P=sp.csc_matrix(np.eye(2)), q=np.zeros((2, 1)), r=np.zeros((1, 1)),
@@ -119,6 +143,7 @@ def test_qp_maros_meszaros_hs21():
     """HS21 from the Maros-Meszaros set, written inline: min 0.01 x1^2 + x2^2 - 100, 10 x1 - x2 >= 10."""
     import numpy as np
     import scipy.sparse as sp
+
     from samadhan.lp import LP
     lp = LP(np.zeros(2), sp.csr_matrix([[10.0, -1.0]]), np.array([10.0]), 0, np.array([2.0, -50.0]),
             np.array([50.0, 50.0]), obj_const=-100.0, Q=sp.csr_matrix(np.diag([0.02, 2.0])))

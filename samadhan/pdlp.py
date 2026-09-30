@@ -12,15 +12,17 @@ cuPDLP, 2023):
 """
 import math
 import time
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import scipy.sparse as sp
 import torch
-import warnings
-warnings.filterwarnings("ignore", message=".*[Ss]parse.*")
 
 from .lp import LP
+
+# torch marks sparse CSR as beta; the mat-vec used here is stable
+warnings.filterwarnings("ignore", message=".*[Ss]parse.*")
 
 
 @dataclass
@@ -69,8 +71,7 @@ def _scale(K: sp.csr_matrix, ruiz_iters=10):
 def _to_torch_csr(A: sp.csr_matrix, device, dtype):
     A = A.tocsr()
     A.sort_indices()
-    return torch.sparse_csr_tensor(  # noqa: sparse CSR is beta in torch but stable for mv
-
+    return torch.sparse_csr_tensor(
         torch.from_numpy(A.indptr.astype(np.int64)),
         torch.from_numpy(A.indices.astype(np.int64)),
         torch.from_numpy(A.data.astype(np.float64)),
@@ -321,9 +322,6 @@ class PDLP:
         qn = float(torch.linalg.vector_norm(self.q))
         w = cn / qn if cn > 1e-10 and qn > 1e-10 else 1.0
         eta = 1.0 / max(float(self.K.values().abs().max()) if self.K._nnz() else 1.0, 1e-12)
-        if not adaptive:
-            eta = 0.998 / max(self._norm_K(), 1e-12)
-            matvecs += 80
 
         # averaging / restart state
         xs, ys, Kxs, KTys, wsum = [torch.zeros_like(v) for v in (x, y, Kx, KTy)] + [0.0]
@@ -335,17 +333,8 @@ class PDLP:
         status, best = "iteration_limit", (k0, x, y, Kx, KTy)
 
         while k_total < max_iter:
-            # ---- one PDHG iteration
+            # ---- one adaptive-step PDHG iteration (retried with a smaller step if rejected)
             while True:
-                if not adaptive:
-                    tau, sigma = eta / w, eta * w
-                    xn = self._proj_x(x - tau * (self.c - KTy))
-                    Kxn = self._mv(self.K, xn)
-                    yn = self._proj_y(y + sigma * (self.q - 2 * Kxn + Kx))
-                    KTyn = self._mv(self.KT, yn)
-                    matvecs += 2
-                    eta_new = eta
-                    break
                 tau, sigma = eta / w, eta * w
                 xn = self._proj_x(x - tau * (self.c - KTy))
                 Kxn = self._mv(self.K, xn)

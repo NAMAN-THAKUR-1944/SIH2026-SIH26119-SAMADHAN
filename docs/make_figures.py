@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -18,7 +19,7 @@ load = lambda f: json.loads((ROOT / "results" / f).read_text())
 
 
 def lp_scaling():
-    R = load("final.json")
+    R = load("lp_refinery.json")
     lab = [f"{r['n'] / 1e6:.2f}M" if r["n"] >= 1e6 else f"{r['n'] / 1e3:.0f}k" for r in R]
     series = [("HiGHS (faster of simplex / IPM)", GREY, [r["highs"]["best"]["time"] for r in R]),
               ("SAMADHAN GPU, accurate (1e-6)", TEAL, [r["samadhan"]["1e-06"]["best"]["time"] for r in R]),
@@ -35,7 +36,7 @@ def lp_scaling():
 
 
 def miplib():
-    R = [r for r in load("miplib.json") if "samadhan" in r]
+    R = [r for r in load("milp_miplib3.json") if "samadhan" in r]
     fig, ax = plt.subplots(figsize=(5.6, 5.0))
     lim = 60.0
     t = lambda d, ok: max(d["time"], 0.01) if ok else lim * 1.6

@@ -1,0 +1,212 @@
+[
+ {
+  "name": "refinery_milp_R3_C6_P3_D5_s0",
+  "n": 96,
+  "m": 57,
+  "ints": 9,
+  "status": "optimal",
+  "obj": 20997.760131096435,
+  "nodes": 12,
+  "time": 0.0028709,
+  "cuts": 28,
+  "rel_diff": 4.3313891391016355e-15,
+  "highs_obj": 20997.760131096526,
+  "highs_time": 0.13675669999793172,
+  "reference": {
+   "status": "optimal",
+   "obj": 20997.760131096536,
+   "nodes": 19,
+   "time": 0.1069116999860853,
+   "rel_diff": 5.197666966921962e-16
+  }
+ },
+ {
+  "name": "refinery_milp_R4_C8_P3_D6_s0",
+  "n": 146,
+  "m": 82,
+  "ints": 12,
+  "status": "optimal",
+  "obj": 27531.339861432527,
+  "nodes": 41,
+  "time": 0.0194965,
+  "cuts": 54,
+  "rel_diff": 1.1892559326432221e-15,
+  "highs_obj": 27531.339861432494,
+  "highs_time": 0.20595229999162257,
+  "reference": {
+   "status": "optimal",
+   "obj": 27531.33986143247,
+   "nodes": 41,
+   "time": 0.8212099000811577,
+   "rel_diff": 9.249768365002837e-16
+  }
+ },
+ {
+  "name": "refinery_milp_R3_C6_P3_D5_s1",
+  "n": 96,
+  "m": 57,
+  "ints": 9,
+  "status": "optimal",
+  "obj": 27539.030938961652,
+  "nodes": 8,
+  "time": 0.002945,
+  "cuts": 33,
+  "rel_diff": 1.9815396637349183e-15,
+  "highs_obj": 27539.030938961707,
+  "highs_time": 0.16432250011712313,
+  "reference": {
+   "status": "optimal",
+   "obj": 27539.030938962278,
+   "nodes": 15,
+   "time": 0.09437950002029538,
+   "rel_diff": 2.0740115147092147e-14
+  }
+ },
+ {
+  "name": "refinery_milp_R4_C8_P3_D6_s1",
+  "n": 146,
+  "m": 82,
+  "ints": 12,
+  "status": "optimal",
+  "obj": 23781.574466005583,
+  "nodes": 80,
+  "time": 0.0281558,
+  "cuts": 52,
+  "rel_diff": 3.3654430185193873e-15,
+  "highs_obj": 23781.574466005663,
+  "highs_time": 0.10348669998347759,
+  "reference": {
+   "status": "optimal",
+   "obj": 23781.574466005666,
+   "nodes": 81,
+   "time": 1.6884926999919116,
+   "rel_diff": 1.5297468265997216e-16
+  }
+ },
+ {
+  "name": "refinery_milp_R3_C6_P3_D5_s2",
+  "n": 96,
+  "m": 57,
+  "ints": 9,
+  "status": "optimal",
+  "obj": 25567.311968435286,
+  "nodes": 0,
+  "time": 0.0005818,
+  "cuts": 12,
+  "rel_diff": 8.537414050213179e-16,
+  "highs_obj": 25567.311968435264,
+  "highs_time": 0.11999100004322827,
+  "reference": {
+   "status": "optimal",
+   "obj": 25567.311968435275,
+   "nodes": 11,
+   "time": 0.06432150001637638,
+   "rel_diff": 4.2687070251065893e-16
+  }
+ },
+ {
+  "name": "refinery_milp_R4_C8_P3_D6_s2",
+  "n": 146,
+  "m": 82,
+  "ints": 12,
+  "status": "optimal",
+  "obj": 44110.415758609575,
+  "nodes": 0,
+  "time": 0.0006199,
+  "cuts": 2,
+  "rel_diff": 1.6494874258271503e-16,
+  "highs_obj": 44110.41575860957,
+  "highs_time": 0.009903499856591225,
+  "reference": {
+   "status": "optimal",
+   "obj": 44110.415758609524,
+   "nodes": 5,
+   "time": 0.07171609997749329,
+   "rel_diff": 9.896924554962902e-16
+  }
+ },
+ {
+  "name": "refinery_milp_R3_C6_P3_D5_s3",
+  "n": 96,
+  "m": 57,
+  "ints": 9,
+  "status": "optimal",
+  "obj": 29606.515501517977,
+  "nodes": 18,
+  "time": 0.0040384,
+  "cuts": 34,
+  "rel_diff": 1.1058987763064088e-15,
+  "highs_obj": 29606.515501517944,
+  "highs_time": 0.10783330001868308,
+  "reference": {
+   "status": "optimal",
+   "obj": 29606.515501518006,
+   "nodes": 33,
+   "time": 0.23175289994105697,
+   "rel_diff": 2.0889199108009944e-15
+  }
+ },
+ {
+  "name": "refinery_milp_R4_C8_P3_D6_s3",
+  "n": 146,
+  "m": 82,
+  "ints": 12,
+  "status": "optimal",
+  "obj": 29243.315232443252,
+  "nodes": 23,
+  "time": 0.011991,
+  "cuts": 51,
+  "rel_diff": 9.9523019963363e-16,
+  "highs_obj": 29243.31523244328,
+  "highs_time": 0.12495299987494946,
+  "reference": {
+   "status": "optimal",
+   "obj": 29243.31523244333,
+   "nodes": 35,
+   "time": 2.1072826001327485,
+   "rel_diff": 1.617249074404649e-15
+  }
+ },
+ {
+  "name": "refinery_milp_R3_C6_P3_D5_s4",
+  "n": 96,
+  "m": 57,
+  "ints": 9,
+  "status": "optimal",
+  "obj": 33680.30454721902,
+  "nodes": 17,
+  "time": 0.0057883,
+  "cuts": 50,
+  "rel_diff": 2.1603004224568993e-16,
+  "highs_obj": 33680.30454721901,
+  "highs_time": 0.12741869990713894,
+  "reference": {
+   "status": "optimal",
+   "obj": 33680.30454721901,
+   "nodes": 21,
+   "time": 0.11200509988702834,
+   "rel_diff": 0.0
+  }
+ },
+ {
+  "name": "refinery_milp_R4_C8_P3_D6_s4",
+  "n": 146,
+  "m": 82,
+  "ints": 12,
+  "status": "optimal",
+  "obj": 29116.252887735827,
+  "nodes": 24,
+  "time": 0.0153612,
+  "cuts": 64,
+  "rel_diff": 0.0,
+  "highs_obj": 29116.252887735827,
+  "highs_time": 0.1440983999054879,
+  "reference": {
+   "status": "optimal",
+   "obj": 29116.252887735845,
+   "nodes": 17,
+   "time": 0.4270719999913126,
+   "rel_diff": 6.247333441426593e-16
+  }
+ }
+]

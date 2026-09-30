@@ -50,7 +50,7 @@ def solve_milp(lp: LP, integer=None, gap_tol=1e-6, node_limit=100_000, time_limi
     if st != "optimal":
         return MILPResult(st, None, math.inf, math.inf, math.inf, 1, time.perf_counter() - t0)
     heap = [(obj, next(tie), lp.l.copy(), lp.u.copy(), x)]
-    nodes, root_bound = 1, obj
+    nodes = 1
 
     while heap:
         bound, _, l, u, x = heapq.heappop(heap)
