@@ -1,0 +1,76 @@
+[
+ {
+  "size": "S",
+  "n": 13296,
+  "m": 2544,
+  "nnz": 25416,
+  "highs": {
+   "status": "Optimal",
+   "obj": 941774.642415395,
+   "time": 86.25959909986705
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 941776.1395242179,
+   "time": 1.1031979001127183,
+   "iters": 9923,
+   "obj_err": 1.5896677989562507e-06
+  }
+ },
+ {
+  "size": "M",
+  "n": 109536,
+  "m": 12264,
+  "nnz": 214092,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 33449237.54054877,
+   "time": 600.050670400029
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 7695204.403362324,
+   "time": 1.4929621999617666,
+   "iters": 8259,
+   "obj_err": null
+  }
+ },
+ {
+  "size": "L",
+  "n": 406080,
+  "m": 31536,
+  "nnz": 796512,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 164331682.62267137,
+   "time": 1660.2570559000596
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 30554063.98505658,
+   "time": 5.146421199897304,
+   "iters": 10627,
+   "obj_err": null
+  }
+ },
+ {
+  "size": "XL",
+  "n": 1157120,
+  "m": 68800,
+  "nnz": 2273888,
+  "highs": {
+   "status": "Not attempted",
+   "obj": null,
+   "time": null,
+   "note": "HiGHS QP did not solve L within its 600 s limit (it stopped at 1660 s); XL not attempted"
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 98139291.1464662,
+   "time": 19.879836600041017,
+   "iters": 15043,
+   "obj_err": null,
+   "rel_gap": 9.319776708590776e-07
+  }
+ }
+]
