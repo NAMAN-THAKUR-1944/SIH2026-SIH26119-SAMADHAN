@@ -6,6 +6,8 @@ Team **VIGHNAX** (127364)
 SAMADHAN (समाधान, "solution") is an optimization solver core written from scratch: no CPLEX, Gurobi,
 Xpress, HiGHS, CBC or SCIP code inside. HiGHS is used only as an outside referee for answers and speed.
 
+Idea deck: [`docs/SAMADHAN_SIH26119_Idea.pdf`](docs/SAMADHAN_SIH26119_Idea.pdf)
+
 ## Results (one laptop: RTX 5050 Laptop GPU 8 GB, all CPU threads for HiGHS)
 
 Refinery supply-chain planning LPs (crude purchase, CDU capacity, sulfur blending, yields, dispatch,
@@ -22,11 +24,22 @@ interior point; SAMADHAN = best of its two GPU methods.
 Accurate mode reaches the HiGHS optimum to within 0.0002 % of cost; fast mode to within 0.07 %.
 The GPU pays off as models grow; small models are faster on a CPU simplex, and SAMADHAN will route them there.
 
-* **Netlib LP set:** see `results/netlib_cpu_tol0.0001.json` (own MPS reader, CPU mode, 1e-4 relative KKT).
+* **Netlib LP set:** 86/91 solved to 1e-4 relative KKT (CPU mode, median 1.7 s), 80 within 0.1 % of the known
+  optimum; our MPS reader reproduces HiGHS's own parse on 91/91 files. The 5 unsolved (bnl1, greenbea, greenbeb,
+  perold, pilot4) are ill-conditioned cases for the planned simplex crossover (`results/netlib_cpu_tol0.0001.json`).
 * **MILP:** 10/10 refinery contract/refinery-selection MILPs proven optimal by our branch-and-bound on our
   own simplex, identical cost to HiGHS (`results/milp.json`).
 
 ## What is in this prototype
+
+```
+samadhan/          the solver (only numpy, scipy.sparse containers and torch tensors are used)
+tests/             pytest suite: every component checked against a hand-computed optimum or HiGHS
+bench_final.py     refinery LP benchmark        -> results/final.json   (table above)
+bench_netlib.py    Netlib LP benchmark          -> results/netlib_cpu_tol0.0001.json
+bench_milp.py      refinery MILP check          -> results/milp.json
+docs/              SIH idea deck (PDF)
+```
 
 | Module | What it does |
 |---|---|
@@ -41,11 +54,12 @@ The GPU pays off as models grow; small models are faster on a CPU simplex, and S
 
 ```bash
 python -m venv .venv
-.venv/Scripts/pip install numpy scipy highspy
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128
-.venv/Scripts/python -m samadhan demo --size L            # generated refinery LP on the GPU
-.venv/Scripts/python -m samadhan solve model.mps --tol 1e-6
-.venv/Scripts/python bench_final.py S M L XL              # the table above
+.venv/Scripts/pip install -r requirements.txt
+.venv/Scripts/python -m pytest                            # 12 correctness tests, ~15 s
+.venv/Scripts/python -m samadhan demo --size XL --tol 1e-6 # 1.16M-variable refinery LP on the GPU
+.venv/Scripts/python -m samadhan solve model.mps --tol 1e-6 --method graph
+.venv/Scripts/python bench_final.py                       # the table above (HiGHS simplex on XL takes 15 min)
 .venv/Scripts/python bench_milp.py                        # MILP check vs HiGHS
 git clone https://github.com/coin-or-tools/Data-Netlib data/netlib
 .venv/Scripts/python bench_netlib.py                      # Netlib LP set

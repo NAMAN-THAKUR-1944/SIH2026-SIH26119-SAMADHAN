@@ -21,6 +21,15 @@ import scipy.sparse as sp
 
 from .lp import LP
 
+# Benchmark sizes used in the README, the deck and bench_final.py (always generated with seed=7).
+REFINERY_SIZES = {
+    "S":  dict(R=4,  C=8,  P=6, D=60,  T=6),    # 13k variables
+    "M":  dict(R=8,  C=10, P=6, D=150, T=12),   # 110k
+    "L":  dict(R=12, C=12, P=8, D=300, T=12),   # 406k
+    "XL": dict(R=16, C=12, P=8, D=500, T=16),   # 1.16M
+}
+BENCH_SEED = 7
+
 
 def refinery_lp(R=4, C=8, P=6, D=40, T=6, seed=0):
     rng = np.random.default_rng(seed)

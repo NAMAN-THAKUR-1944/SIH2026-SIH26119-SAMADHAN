@@ -1,0 +1,9 @@
+# Tested with Python 3.14 on Windows 11, NVIDIA RTX 5050 Laptop GPU (CUDA 12.8).
+# Install the CUDA build of torch first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+torch>=2.11
+numpy>=2.5
+scipy>=1.18
+# benchmark referee and tests only (not used inside the solver)
+highspy>=1.15
+pytest>=9.1

@@ -8,9 +8,15 @@
    "simplex": {
     "status": "Optimal",
     "obj": 715013.8149135911,
-    "time": 0.3845212000887841
+    "time": 0.3845212000887841,
+    "method": "dual simplex"
    },
-   "ipm": null,
+   "ipm": {
+    "status": "Optimal",
+    "obj": 715013.8149135886,
+    "time": 0.2370251000393182,
+    "method": "interior point"
+   },
    "best": {
     "status": "Optimal",
     "obj": 715013.8149135886,
@@ -100,9 +106,15 @@
    "simplex": {
     "status": "Optimal",
     "obj": 5804288.364696291,
-    "time": 18.648964599939063
+    "time": 18.648964599939063,
+    "method": "dual simplex"
    },
-   "ipm": null,
+   "ipm": {
+    "status": "Optimal",
+    "obj": 5804288.364696311,
+    "time": 8.513502799905837,
+    "method": "interior point"
+   },
    "best": {
     "status": "Optimal",
     "obj": 5804288.364696311,
@@ -192,9 +204,15 @@
    "simplex": {
     "status": "Optimal",
     "obj": 23310430.743504267,
-    "time": 220.76266769994982
+    "time": 220.76266769994982,
+    "method": "dual simplex"
    },
-   "ipm": null,
+   "ipm": {
+    "status": "Optimal",
+    "obj": 23310430.743504263,
+    "time": 63.87758479989134,
+    "method": "interior point"
+   },
    "best": {
     "status": "Optimal",
     "obj": 23310430.743504263,
@@ -284,9 +302,15 @@
    "simplex": {
     "status": "Time limit reached",
     "obj": 49998074.82811887,
-    "time": 900.100151900202
+    "time": 900.100151900202,
+    "method": "dual simplex"
    },
-   "ipm": null,
+   "ipm": {
+    "status": "Optimal",
+    "obj": 73593994.55586636,
+    "time": 323.3831911999732,
+    "method": "interior point"
+   },
    "best": {
     "status": "Optimal",
     "obj": 73593994.55586636,

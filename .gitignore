@@ -1,12 +1,10 @@
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
 data/
-deck/png_*/
-deck/idea1.pptx
-deck/template.pptx
-deck/qr_repo.png
-deck/dump.py
+# local working files (deck tooling needs the idea-1 template; not part of the product)
+deck/
 CLAUDE.md
 CONTEXT.md
 ps-counts-*.md
