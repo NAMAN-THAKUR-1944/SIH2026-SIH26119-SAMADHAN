@@ -18,7 +18,10 @@ HiGHS, CBC or SCIP code inside. It has two engines:
 
 HiGHS, the leading open-source solver, is used only as an outside referee for answers and speed.
 
-📄 Idea deck: [`docs/SAMADHAN_SIH26119_Idea.pdf`](docs/SAMADHAN_SIH26119_Idea.pdf)
+▶ **3-minute demo video:** [youtu.be/zagX0zqtIeU](https://youtu.be/zagX0zqtIeU) (a real 1.16 M-variable run, the head-to-head with HiGHS, and all benchmark results)
+📄 **Idea deck:** [`docs/SAMADHAN_SIH26119_Idea.pdf`](docs/SAMADHAN_SIH26119_Idea.pdf)
+
+[![SAMADHAN demo video](docs/img/video_thumbnail.png)](https://youtu.be/zagX0zqtIeU)
 
 ## Results at a glance
 
