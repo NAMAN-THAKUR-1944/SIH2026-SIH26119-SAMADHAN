@@ -9,3 +9,5 @@ CLAUDE.md
 CONTEXT.md
 ps-counts-*.md
 video/
+samadhan/_lib/
+.venv-tts/

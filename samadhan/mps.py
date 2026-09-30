@@ -89,6 +89,7 @@ def _read(path, fixed):
     rows = {}          # name -> type (N, E, L, G)
     row_order = []
     obj_row = None
+    free_rows = set()  # extra N rows: free rows, ignored (only the first N row is the objective)
     cols = {}          # name -> index
     entries = []       # (row_name, col_idx, val)
     rhs = {}
@@ -109,6 +110,8 @@ def _read(path, fixed):
             if t == "N":
                 if obj_row is None:
                     obj_row = r
+                else:
+                    free_rows.add(r)
                 continue
             if t not in ("E", "L", "G"):
                 raise ValueError(f"bad row type {t}")
@@ -121,19 +124,27 @@ def _read(path, fixed):
                 integer.append(in_int)
             j = cols[cname]
             for r, v in pairs:
+                if r in free_rows:
+                    continue
                 if r != obj_row and r not in rows:
                     raise KeyError(r)
                 entries.append((r, j, float(v)))
         elif section in ("RHS", "RANGES"):
             target = rhs if section == "RHS" else ranges
             for r, v in rec[1]:
+                if r in free_rows:
+                    continue
                 if r != obj_row and r not in rows:
-                    raise KeyError(r)
+                    if not fixed:
+                        raise KeyError(r)      # maybe a fixed-format file: retry that way
+                    continue                    # unknown row: ignored, as HiGHS does
                 target[r] = float(v)
         elif section == "BOUNDS":
             bt, cname, v = rec
             if cname not in cols:
-                raise KeyError(cname)
+                if not fixed:
+                    raise KeyError(cname)
+                continue
             bounds.append((bt, cols[cname], float(v) if v else 0.0))
 
     n = len(cols)

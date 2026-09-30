@@ -3,6 +3,7 @@ import time
 
 import numpy as np
 import highspy
+import scipy.sparse as sp
 
 from .lp import LP
 
@@ -34,6 +35,11 @@ def solve_highs(lp: LP, solver="choose", time_limit=600.0, threads=0):
         model.integrality_ = [highspy.HighsVarType.kInteger if f else highspy.HighsVarType.kContinuous
                               for f in lp.integer]
     h.passModel(model)
+    if getattr(lp, "Q", None) is not None and lp.Q.nnz:
+        L = sp.tril(lp.Q).tocsc()           # HiGHS: objective c'x + 0.5 x'Qx, lower triangle column-wise
+        L.sort_indices()
+        h.passHessian(n, L.nnz, highspy.HessianFormat.kTriangular, L.indptr.astype(np.int32),
+                      L.indices.astype(np.int32), L.data.astype(np.float64))
     t0 = time.perf_counter()
     h.run()
     elapsed = time.perf_counter() - t0

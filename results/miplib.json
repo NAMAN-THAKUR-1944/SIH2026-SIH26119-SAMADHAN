@@ -1,0 +1,1606 @@
+[
+ {
+  "name": "10teams",
+  "n": 2025,
+  "m": 230,
+  "nnz": 12150,
+  "ints": 1800,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 924.0000000000005,
+   "bound": 924.0000000000005,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 1.692619799869135
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 923.9999999999822,
+   "gap": Infinity,
+   "nodes": 1721,
+   "lp_iters": 68416,
+   "time": 60.0229164,
+   "cuts": 240
+  }
+ },
+ {
+  "name": "air03",
+  "n": 10757,
+  "m": 124,
+  "nnz": 91028,
+  "ints": 10757,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 340160.0,
+   "bound": 340160.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 2.821409200085327
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 340160.0,
+   "bound": 340160.0,
+   "gap": 0.0,
+   "nodes": 0,
+   "lp_iters": 446,
+   "time": 0.084474,
+   "cuts": 36
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "air04",
+  "n": 8904,
+  "m": 823,
+  "nnz": 72965,
+  "ints": 8904,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 56137.00000000005,
+   "bound": 56137.00000000005,
+   "gap": 0.0,
+   "nodes": 108,
+   "time": 49.18427069997415
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 55598.78627718012,
+   "gap": Infinity,
+   "nodes": 25,
+   "lp_iters": 7168,
+   "time": 60.0582599,
+   "cuts": 180
+  }
+ },
+ {
+  "name": "air05",
+  "n": 7195,
+  "m": 426,
+  "nnz": 52121,
+  "ints": 7195,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 26374.00000000001,
+   "bound": 26373.0,
+   "gap": 3.7916129521912246e-05,
+   "nodes": 19,
+   "time": 31.32142570009455
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 27035.00000000008,
+   "bound": 26007.946255501836,
+   "gap": 0.03798978156087445,
+   "nodes": 157,
+   "lp_iters": 16704,
+   "time": 60.2167624,
+   "cuts": 240
+  },
+  "obj_rel_diff": 0.025062561613713084
+ },
+ {
+  "name": "arki001",
+  "n": 1388,
+  "m": 1048,
+  "nnz": 20439,
+  "ints": 538,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 7583562.441035426,
+   "bound": 7580570.761734343,
+   "gap": 0.00039449524209028827,
+   "nodes": 2207,
+   "time": 60.004431900102645
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 7579984.404805588,
+   "gap": Infinity,
+   "nodes": 3121,
+   "lp_iters": 28790,
+   "time": 60.1099185,
+   "cuts": 47
+  }
+ },
+ {
+  "name": "bell3a",
+  "n": 133,
+  "m": 123,
+  "nnz": 347,
+  "ints": 71,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 878430.3159999857,
+   "bound": 878345.0627137781,
+   "gap": 9.705184879748827e-05,
+   "nodes": 1044,
+   "time": 0.6861966999713331
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 878430.3159999999,
+   "bound": 878430.3159999999,
+   "gap": 0.0,
+   "nodes": 92209,
+   "lp_iters": 451400,
+   "time": 16.3745549,
+   "cuts": 25
+  },
+  "obj_rel_diff": 1.6168236687867544e-14
+ },
+ {
+  "name": "bell5",
+  "n": 104,
+  "m": 91,
+  "nnz": 266,
+  "ints": 58,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 8966406.49152,
+   "bound": 8965524.177778862,
+   "gap": 9.840215720452281e-05,
+   "nodes": 180,
+   "time": 0.38517630007117987
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 8966413.705379998,
+   "bound": 8966413.705379998,
+   "gap": 0.0,
+   "nodes": 429461,
+   "lp_iters": 587334,
+   "time": 25.7567049,
+   "cuts": 23
+  },
+  "obj_rel_diff": 8.045430468172783e-07
+ },
+ {
+  "name": "blend2",
+  "n": 353,
+  "m": 274,
+  "nnz": 1409,
+  "ints": 264,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 7.598985,
+   "bound": 7.598985,
+   "gap": 0.0,
+   "nodes": 67,
+   "time": 2.296953500015661
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 7.598985,
+   "bound": 7.598985,
+   "gap": 0.0,
+   "nodes": 10994,
+   "lp_iters": 97109,
+   "time": 8.1283377,
+   "cuts": 52
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "cap6000",
+  "n": 6000,
+  "m": 2176,
+  "nnz": 48243,
+  "ints": 6000,
+  "skipped": "2176 rows > 1500"
+ },
+ {
+  "name": "dano3mip",
+  "n": 13873,
+  "m": 3202,
+  "nnz": 79655,
+  "ints": 552,
+  "skipped": "3202 rows > 1500"
+ },
+ {
+  "name": "danoint",
+  "n": 521,
+  "m": 664,
+  "nnz": 3232,
+  "ints": 56,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 65.66666666666629,
+   "bound": 62.76979327162452,
+   "gap": 0.04411482327474796,
+   "nodes": 2670,
+   "time": 60.00459299981594
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 62.69,
+   "gap": Infinity,
+   "nodes": 233,
+   "lp_iters": 29760,
+   "time": 60.0234886,
+   "cuts": 79
+  }
+ },
+ {
+  "name": "dcmulti",
+  "n": 548,
+  "m": 290,
+  "nnz": 1315,
+  "ints": 75,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 188182.0,
+   "bound": 188164.45598283247,
+   "gap": 9.322898665934622e-05,
+   "nodes": 5,
+   "time": 1.4029721999540925
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 188186.49999999997,
+   "bound": 188186.49999999997,
+   "gap": 0.0,
+   "nodes": 285,
+   "lp_iters": 8755,
+   "time": 7.4378923,
+   "cuts": 359
+  },
+  "obj_rel_diff": 2.39130203737387e-05
+ },
+ {
+  "name": "dsbmip",
+  "n": 1886,
+  "m": 1233,
+  "nnz": 7468,
+  "ints": 192,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": -305.1981750094818,
+   "bound": -305.1981750094818,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.3654781999066472
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": -305.19817500947573,
+   "bound": -305.19817500947573,
+   "gap": 0.0,
+   "nodes": 156,
+   "lp_iters": 8660,
+   "time": 6.3323516,
+   "cuts": 25
+  },
+  "obj_rel_diff": 1.992884072100856e-14
+ },
+ {
+  "name": "egout",
+  "n": 141,
+  "m": 98,
+  "nnz": 282,
+  "ints": 55,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 568.1007000000001,
+   "bound": 568.1007,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.01978680002503097
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 568.1006999999996,
+   "bound": 568.1006999999996,
+   "gap": 0.0,
+   "nodes": 2624,
+   "lp_iters": 4168,
+   "time": 1.041435,
+   "cuts": 121
+  },
+  "obj_rel_diff": 8.004696190067431e-16
+ },
+ {
+  "name": "enigma",
+  "n": 100,
+  "m": 21,
+  "nnz": 289,
+  "ints": 100,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 0.0,
+   "bound": 0.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.2080274000763893
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 0.0,
+   "bound": 0.0,
+   "gap": 0.0,
+   "nodes": 6783,
+   "lp_iters": 54584,
+   "time": 0.1632487,
+   "cuts": 10
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "fast0507",
+  "n": 63009,
+  "m": 507,
+  "nnz": 409349,
+  "ints": 63009,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 180.0,
+   "bound": 173.0,
+   "gap": 0.03888888888888889,
+   "nodes": 51,
+   "time": 60.0550756000448
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 172.18834537826248,
+   "gap": Infinity,
+   "nodes": 32,
+   "lp_iters": 8576,
+   "time": 60.5001461,
+   "cuts": 120
+  }
+ },
+ {
+  "name": "fiber",
+  "n": 1298,
+  "m": 363,
+  "nnz": 2944,
+  "ints": 1254,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 405935.17999999196,
+   "bound": 405935.1799999919,
+   "gap": 0.0,
+   "nodes": 9,
+   "time": 1.0894832001067698
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 407941.5800000002,
+   "bound": 396147.2669000976,
+   "gap": 0.028911769915443735,
+   "nodes": 3863,
+   "lp_iters": 55199,
+   "time": 60.0306722,
+   "cuts": 276
+  },
+  "obj_rel_diff": 0.004942661042603576
+ },
+ {
+  "name": "fixnet6",
+  "n": 878,
+  "m": 478,
+  "nnz": 1756,
+  "ints": 378,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 3983.0,
+   "bound": 3982.8,
+   "gap": 5.02134069796179e-05,
+   "nodes": 1,
+   "time": 4.132577499840409
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 7878.0,
+   "bound": 3613.47804040404,
+   "gap": 0.5413203807560244,
+   "nodes": 108692,
+   "lp_iters": 312562,
+   "time": 60.2520489,
+   "cuts": 87
+  },
+  "obj_rel_diff": 0.977906100928948
+ },
+ {
+  "name": "flugpl",
+  "n": 18,
+  "m": 18,
+  "nnz": 46,
+  "ints": 11,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 1201500.0,
+   "bound": 1201500.0,
+   "gap": 0.0,
+   "nodes": 89,
+   "time": 0.10454409988597035
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 1201500.0,
+   "bound": 1201500.0,
+   "gap": 0.0,
+   "nodes": 3452,
+   "lp_iters": 2881,
+   "time": 0.1077292,
+   "cuts": 43
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "gen",
+  "n": 870,
+  "m": 780,
+  "nnz": 2592,
+  "ints": 150,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 112313.362718,
+   "bound": 112313.362718,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.030184899922460318
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 112320.98682399977,
+   "bound": 112320.98682399977,
+   "gap": 0.0,
+   "nodes": 739,
+   "lp_iters": 11634,
+   "time": 10.495172,
+   "cuts": 70
+  },
+  "obj_rel_diff": 6.788244795869e-05
+ },
+ {
+  "name": "gesa2",
+  "n": 1224,
+  "m": 1392,
+  "nnz": 5064,
+  "ints": 408,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 25779856.371697918,
+   "bound": 25779774.83520285,
+   "gap": 3.1627986553366913e-06,
+   "nodes": 1,
+   "time": 0.963974199956283
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 25880562.293527447,
+   "bound": 25732966.26668173,
+   "gap": 0.0057029683193022705,
+   "nodes": 9652,
+   "lp_iters": 30850,
+   "time": 60.0228005,
+   "cuts": 53
+  },
+  "obj_rel_diff": 0.003906380251989604
+ },
+ {
+  "name": "gesa2_o",
+  "n": 1224,
+  "m": 1248,
+  "nnz": 3672,
+  "ints": 720,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 25779856.371697918,
+   "bound": 25777552.390891623,
+   "gap": 8.937135929214192e-05,
+   "nodes": 1,
+   "time": 1.1252194999251515
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 25785317.4820741,
+   "bound": 25774613.544657294,
+   "gap": 0.00041511753439716894,
+   "nodes": 3056,
+   "lp_iters": 18936,
+   "time": 60.0627145,
+   "cuts": 292
+  },
+  "obj_rel_diff": 0.00021183633831949324
+ },
+ {
+  "name": "gesa3",
+  "n": 1152,
+  "m": 1368,
+  "nnz": 4944,
+  "ints": 384,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 27991042.648381937,
+   "bound": 27988531.53108616,
+   "gap": 8.971145974516678e-05,
+   "nodes": 3,
+   "time": 3.3952806999441236
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 28001480.50106513,
+   "bound": 27982605.59160866,
+   "gap": 0.000674068267774444,
+   "nodes": 2236,
+   "lp_iters": 14178,
+   "time": 60.0220071,
+   "cuts": 73
+  },
+  "obj_rel_diff": 0.0003728997456190635
+ },
+ {
+  "name": "gesa3_o",
+  "n": 1152,
+  "m": 1224,
+  "nnz": 3624,
+  "ints": 672,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 27991042.64838267,
+   "bound": 27988257.857008446,
+   "gap": 9.94886617553732e-05,
+   "nodes": 7,
+   "time": 2.2448150001000613
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 27993400.25700655,
+   "bound": 27993400.25700655,
+   "gap": 0.0,
+   "nodes": 652,
+   "lp_iters": 7726,
+   "time": 38.5981269,
+   "cuts": 174
+  },
+  "obj_rel_diff": 8.422725274985035e-05
+ },
+ {
+  "name": "gt2",
+  "n": 188,
+  "m": 29,
+  "nnz": 376,
+  "ints": 188,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 21166.0,
+   "bound": 21166.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.06751130009070039
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 21166.000000000004,
+   "bound": 21166.000000000004,
+   "gap": 0.0,
+   "nodes": 1919,
+   "lp_iters": 11233,
+   "time": 0.3910999,
+   "cuts": 116
+  },
+  "obj_rel_diff": 1.7187842800206525e-16
+ },
+ {
+  "name": "harp2",
+  "n": 2993,
+  "m": 112,
+  "nnz": 5840,
+  "ints": 2993,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": -73899553.0,
+   "bound": -73906934.0,
+   "gap": 9.987881794088795e-05,
+   "nodes": 2320,
+   "time": 26.032637799857184
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": -74041242.67764129,
+   "gap": Infinity,
+   "nodes": 52892,
+   "lp_iters": 538304,
+   "time": 60.0457331,
+   "cuts": 77
+  }
+ },
+ {
+  "name": "khb05250",
+  "n": 1350,
+  "m": 101,
+  "nnz": 2700,
+  "ints": 24,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 106940226.0,
+   "bound": 106931338.4184,
+   "gap": 8.310793732561865e-05,
+   "nodes": 1,
+   "time": 0.3911750998813659
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 106940226.0,
+   "bound": 106940226.0,
+   "gap": 0.0,
+   "nodes": 51,
+   "lp_iters": 1189,
+   "time": 0.1143989,
+   "cuts": 86
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "l152lav",
+  "n": 1989,
+  "m": 97,
+  "nnz": 9922,
+  "ints": 1989,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 4722.0,
+   "bound": 4722.0,
+   "gap": 0.0,
+   "nodes": 19,
+   "time": 3.799906399799511
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 4722.0,
+   "bound": 4702.525983372465,
+   "gap": 0.0041241034789358515,
+   "nodes": 1123,
+   "lp_iters": 32982,
+   "time": 60.0182952,
+   "cuts": 472
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "lseu",
+  "n": 89,
+  "m": 28,
+  "nnz": 309,
+  "ints": 89,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 1120.0000000000002,
+   "bound": 1120.0000000000002,
+   "gap": 0.0,
+   "nodes": 7,
+   "time": 0.3529958000872284
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 1120.0,
+   "bound": 1120.0,
+   "gap": 0.0,
+   "nodes": 7763,
+   "lp_iters": 34322,
+   "time": 1.1615228,
+   "cuts": 76
+  },
+  "obj_rel_diff": 2.0301221021717145e-16
+ },
+ {
+  "name": "markshare1",
+  "n": 62,
+  "m": 6,
+  "nnz": 312,
+  "ints": 50,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 21.000000000000004,
+   "bound": 0.0,
+   "gap": 1.0,
+   "nodes": 47601,
+   "time": 60.00588700012304
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 7.999999999999466,
+   "bound": 0.0,
+   "gap": 1.0,
+   "nodes": 7872954,
+   "lp_iters": 28789098,
+   "time": 84.5365598,
+   "cuts": 6
+  }
+ },
+ {
+  "name": "markshare2",
+  "n": 74,
+  "m": 7,
+  "nnz": 434,
+  "ints": 60,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 40.999999999999766,
+   "bound": 0.0,
+   "gap": 1.0,
+   "nodes": 60111,
+   "time": 60.00478939991444
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 14.999999999999734,
+   "bound": 0.0,
+   "gap": 1.0,
+   "nodes": 6124886,
+   "lp_iters": 24630773,
+   "time": 89.4852948,
+   "cuts": 7
+  }
+ },
+ {
+  "name": "mas74",
+  "n": 151,
+  "m": 13,
+  "nnz": 1706,
+  "ints": 150,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 12014.89237909993,
+   "bound": 10707.629069637862,
+   "gap": 0.10880358044122568,
+   "nodes": 24666,
+   "time": 60.01165649993345
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 11857.37125819999,
+   "bound": 11175.234873650783,
+   "gap": 0.057528466444657714,
+   "nodes": 466843,
+   "lp_iters": 2601511,
+   "time": 61.40322,
+   "cuts": 82
+  }
+ },
+ {
+  "name": "mas76",
+  "n": 151,
+  "m": 12,
+  "nnz": 1640,
+  "ints": 150,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 40005.054141,
+   "bound": 39321.99246697313,
+   "gap": 0.01707438444201022,
+   "nodes": 111477,
+   "time": 60.00696519995108
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 40004.9860493135,
+   "bound": 40004.9860493135,
+   "gap": 0.0,
+   "nodes": 536683,
+   "lp_iters": 3605868,
+   "time": 46.733384,
+   "cuts": 41
+  }
+ },
+ {
+  "name": "misc03",
+  "n": 160,
+  "m": 96,
+  "nnz": 2053,
+  "ints": 159,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 3359.9999999999955,
+   "bound": 3359.9999999999955,
+   "gap": 0.0,
+   "nodes": 27,
+   "time": 0.5930135000962764
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 3360.0000000000095,
+   "bound": 3360.0000000000095,
+   "gap": 0.0,
+   "nodes": 1378,
+   "lp_iters": 22138,
+   "time": 1.0135662,
+   "cuts": 38
+  },
+  "obj_rel_diff": 4.1955856778215496e-15
+ },
+ {
+  "name": "misc06",
+  "n": 1808,
+  "m": 820,
+  "nnz": 5859,
+  "ints": 112,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 12851.076291564139,
+   "bound": 12850.130241708353,
+   "gap": 7.361639090155813e-05,
+   "nodes": 1,
+   "time": 0.19984660018235445
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 12850.860737382542,
+   "bound": 12850.860737382542,
+   "gap": 0.0,
+   "nodes": 148,
+   "lp_iters": 1692,
+   "time": 3.5066484,
+   "cuts": 2
+  },
+  "obj_rel_diff": 1.6773239587630744e-05
+ },
+ {
+  "name": "misc07",
+  "n": 260,
+  "m": 212,
+  "nnz": 8619,
+  "ints": 259,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 2809.999999999964,
+   "bound": 2809.999999999964,
+   "gap": 0.0,
+   "nodes": 6640,
+   "time": 28.276336200069636
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 2810.000000000004,
+   "bound": 2634.999999999999,
+   "gap": 0.062277580071176064,
+   "nodes": 21025,
+   "lp_iters": 286912,
+   "time": 60.0312777,
+   "cuts": 60
+  },
+  "obj_rel_diff": 1.424119817722753e-14
+ },
+ {
+  "name": "mitre",
+  "n": 10724,
+  "m": 2054,
+  "nnz": 39704,
+  "ints": 10724,
+  "skipped": "2054 rows > 1500"
+ },
+ {
+  "name": "mkc",
+  "n": 5325,
+  "m": 3411,
+  "nnz": 17038,
+  "ints": 5323,
+  "skipped": "3411 rows > 1500"
+ },
+ {
+  "name": "mod008",
+  "n": 319,
+  "m": 6,
+  "nnz": 1243,
+  "ints": 319,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 306.99999999999767,
+   "bound": 306.99999999999767,
+   "gap": 0.0,
+   "nodes": 7,
+   "time": 1.1723226001486182
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 307.0,
+   "bound": 307.0,
+   "gap": 0.0,
+   "nodes": 19846,
+   "lp_iters": 104673,
+   "time": 2.2124063,
+   "cuts": 57
+  },
+  "obj_rel_diff": 7.591466362518391e-15
+ },
+ {
+  "name": "mod010",
+  "n": 2655,
+  "m": 146,
+  "nnz": 11203,
+  "ints": 2655,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 6548.0,
+   "bound": 6548.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.622304700082168
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 6547.999999999943,
+   "bound": 6547.999999999943,
+   "gap": 0.0,
+   "nodes": 0,
+   "lp_iters": 630,
+   "time": 0.0806587,
+   "cuts": 148
+  },
+  "obj_rel_diff": 8.750483538743812e-15
+ },
+ {
+  "name": "mod011",
+  "n": 10958,
+  "m": 4497,
+  "nnz": 23174,
+  "ints": 96,
+  "skipped": "4497 rows > 1500"
+ },
+ {
+  "name": "modglob",
+  "n": 422,
+  "m": 291,
+  "nnz": 968,
+  "ints": 98,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 20740508.08630824,
+   "bound": 20738498.019816138,
+   "gap": 9.691500727650819e-05,
+   "nodes": 39,
+   "time": 0.7153549001086503
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 20753032.277578827,
+   "bound": 20701577.834174965,
+   "gap": 0.0024793698923435297,
+   "nodes": 122993,
+   "lp_iters": 481194,
+   "time": 60.2329029,
+   "cuts": 68
+  },
+  "obj_rel_diff": 0.0006038517098264287
+ },
+ {
+  "name": "noswot",
+  "n": 128,
+  "m": 182,
+  "nnz": 735,
+  "ints": 100,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -41.0,
+   "bound": -42.99999999999997,
+   "gap": 0.04878048780487736,
+   "nodes": 67158,
+   "time": 60.00912549998611
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": -43.00000000000001,
+   "gap": Infinity,
+   "nodes": 279316,
+   "lp_iters": 1103826,
+   "time": 60.1947926,
+   "cuts": 16
+  }
+ },
+ {
+  "name": "nw04",
+  "n": 87482,
+  "m": 36,
+  "nnz": 636666,
+  "ints": 87482,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 16862.000000000004,
+   "bound": 16313.777777777777,
+   "gap": 0.03251228930270585,
+   "nodes": 0,
+   "time": 60.02876830007881
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 16861.999999996966,
+   "bound": 16861.999999996966,
+   "gap": 0.0,
+   "nodes": 16,
+   "lp_iters": 1060,
+   "time": 10.6008244,
+   "cuts": 129
+  }
+ },
+ {
+  "name": "p0033",
+  "n": 33,
+  "m": 16,
+  "nnz": 98,
+  "ints": 33,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 3088.999999999999,
+   "bound": 3088.999999999999,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.043687199940904975
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 3089.0,
+   "bound": 3089.0,
+   "gap": 0.0,
+   "nodes": 668,
+   "lp_iters": 1354,
+   "time": 0.0081522,
+   "cuts": 25
+  },
+  "obj_rel_diff": 2.9443013977757476e-16
+ },
+ {
+  "name": "p0201",
+  "n": 201,
+  "m": 133,
+  "nnz": 1923,
+  "ints": 201,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 7614.999999997075,
+   "bound": 7614.999999997075,
+   "gap": 0.0,
+   "nodes": 5,
+   "time": 0.9945643001701683
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 7614.999999999986,
+   "bound": 7614.999999999986,
+   "gap": 0.0,
+   "nodes": 676,
+   "lp_iters": 16054,
+   "time": 8.6459497,
+   "cuts": 315
+  },
+  "obj_rel_diff": 3.8231024824376385e-13
+ },
+ {
+  "name": "p0282",
+  "n": 282,
+  "m": 241,
+  "nnz": 1966,
+  "ints": 282,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 258411.0,
+   "bound": 258411.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.3437448001932353
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 258411.0,
+   "bound": 258411.0,
+   "gap": 0.0,
+   "nodes": 2010,
+   "lp_iters": 24546,
+   "time": 6.3128112,
+   "cuts": 204
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "p0548",
+  "n": 548,
+  "m": 176,
+  "nnz": 1711,
+  "ints": 548,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 8691.0,
+   "bound": 8691.0,
+   "gap": 0.0,
+   "nodes": 0,
+   "time": 0.11838550004176795
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 7753.42466602933,
+   "gap": Infinity,
+   "nodes": 5588,
+   "lp_iters": 68672,
+   "time": 60.0080964,
+   "cuts": 383
+  }
+ },
+ {
+  "name": "p2756",
+  "n": 2756,
+  "m": 755,
+  "nnz": 8937,
+  "ints": 2756,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 3124.0,
+   "bound": 3124.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.5822046999819577
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 2723.80281690141,
+   "gap": Infinity,
+   "nodes": 40727,
+   "lp_iters": 252032,
+   "time": 60.0941722,
+   "cuts": 61
+  }
+ },
+ {
+  "name": "pk1",
+  "n": 86,
+  "m": 45,
+  "nnz": 915,
+  "ints": 55,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 13.999999999999915,
+   "bound": 1.168716799630187,
+   "gap": 0.9165202285978432,
+   "nodes": 83722,
+   "time": 60.00766379991546
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 11.000000000000004,
+   "bound": 11.000000000000004,
+   "gap": 0.0,
+   "nodes": 349629,
+   "lp_iters": 3334987,
+   "time": 35.1484414,
+   "cuts": 15
+  }
+ },
+ {
+  "name": "pp08a",
+  "n": 240,
+  "m": 136,
+  "nnz": 480,
+  "ints": 64,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 7350.0,
+   "bound": 7350.0,
+   "gap": 0.0,
+   "nodes": 191,
+   "time": 2.05243040015921
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 7390.0,
+   "bound": 7007.902254144592,
+   "gap": 0.051704701739568065,
+   "nodes": 9520,
+   "lp_iters": 106278,
+   "time": 60.0258986,
+   "cuts": 317
+  },
+  "obj_rel_diff": 0.005442176870748299
+ },
+ {
+  "name": "pp08aCUTS",
+  "n": 240,
+  "m": 246,
+  "nnz": 839,
+  "ints": 64,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 7349.999999999994,
+   "bound": 7349.430197425948,
+   "gap": 7.752415973411604e-05,
+   "nodes": 27,
+   "time": 2.3519756998866796
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 7350.000000000003,
+   "bound": 7124.50363038425,
+   "gap": 0.030679778179013985,
+   "nodes": 11499,
+   "lp_iters": 118649,
+   "time": 60.0151867,
+   "cuts": 237
+  },
+  "obj_rel_diff": 1.2374077575141892e-15
+ },
+ {
+  "name": "qiu",
+  "n": 840,
+  "m": 1192,
+  "nnz": 3432,
+  "ints": 48,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -132.87313694702365,
+   "bound": -247.4348569469998,
+   "gap": 0.8621887210027392,
+   "nodes": 5869,
+   "time": 60.009477300103754
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 60.472823053000596,
+   "bound": -754.0200183923314,
+   "gap": 13.46874183021819,
+   "nodes": 388,
+   "lp_iters": 15872,
+   "time": 60.3471704,
+   "cuts": 0
+  }
+ },
+ {
+  "name": "qnet1",
+  "n": 1541,
+  "m": 503,
+  "nnz": 4622,
+  "ints": 1417,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 16029.692681,
+   "bound": 16029.692681,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.8788079998921603
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 16351.460681,
+   "bound": 15306.590725962058,
+   "gap": 0.06390071048833307,
+   "nodes": 885,
+   "lp_iters": 19520,
+   "time": 60.1905342,
+   "cuts": 377
+  },
+  "obj_rel_diff": 0.02007324821525691
+ },
+ {
+  "name": "qnet1_o",
+  "n": 1541,
+  "m": 456,
+  "nnz": 4214,
+  "ints": 1417,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 16029.692680999662,
+   "bound": 16029.692680999662,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 1.4288881998509169
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 16029.692681000011,
+   "bound": 14857.856999999996,
+   "gap": 0.07310406408408512,
+   "nodes": 1260,
+   "lp_iters": 41127,
+   "time": 60.0129502,
+   "cuts": 259
+  },
+  "obj_rel_diff": 2.1787439873677253e-14
+ },
+ {
+  "name": "rentacar",
+  "n": 9557,
+  "m": 6805,
+  "nnz": 41873,
+  "ints": 55,
+  "skipped": "6805 rows > 1500"
+ },
+ {
+  "name": "rgn",
+  "n": 180,
+  "m": 24,
+  "nnz": 460,
+  "ints": 100,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 82.19999923999991,
+   "bound": 82.19999923999991,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.29621810000389814
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 82.19999924000113,
+   "bound": 82.19999924000113,
+   "gap": 0.0,
+   "nodes": 3598,
+   "lp_iters": 27311,
+   "time": 2.7874531,
+   "cuts": 144
+  },
+  "obj_rel_diff": 1.4867804340716606e-14
+ },
+ {
+  "name": "rout",
+  "n": 556,
+  "m": 291,
+  "nnz": 2431,
+  "ints": 315,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 1077.56,
+   "bound": 1077.46,
+   "gap": 9.280225695080465e-05,
+   "nodes": 9336,
+   "time": 44.57368540018797
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 1191.0900000000008,
+   "bound": 1010.0533094277363,
+   "gap": 0.15199245277205284,
+   "nodes": 8832,
+   "lp_iters": 146607,
+   "time": 60.007542,
+   "cuts": 191
+  },
+  "obj_rel_diff": 0.10535840231634516
+ },
+ {
+  "name": "set1ch",
+  "n": 712,
+  "m": 492,
+  "nnz": 1412,
+  "ints": 240,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 54537.75,
+   "bound": 54534.90892976416,
+   "gap": 5.2093645884508126e-05,
+   "nodes": 1,
+   "time": 0.5005145999602973
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 50703.881653730146,
+   "gap": Infinity,
+   "nodes": 2420,
+   "lp_iters": 27597,
+   "time": 60.0069083,
+   "cuts": 480
+  }
+ },
+ {
+  "name": "seymour",
+  "n": 1372,
+  "m": 4944,
+  "nnz": 33549,
+  "ints": 1372,
+  "skipped": "4944 rows > 1500"
+ },
+ {
+  "name": "stein27",
+  "n": 27,
+  "m": 118,
+  "nnz": 378,
+  "ints": 27,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 17.999999999999982,
+   "bound": 17.999999999999982,
+   "gap": 0.0,
+   "nodes": 1434,
+   "time": 0.9677366998512298
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 18.000000000000007,
+   "bound": 18.000000000000007,
+   "gap": 0.0,
+   "nodes": 9736,
+   "lp_iters": 27357,
+   "time": 2.554624,
+   "cuts": 21
+  },
+  "obj_rel_diff": 1.381610875089085e-15
+ },
+ {
+  "name": "stein45",
+  "n": 45,
+  "m": 331,
+  "nnz": 1034,
+  "ints": 45,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 29.999999999999996,
+   "bound": 29.999999999999996,
+   "gap": 0.0,
+   "nodes": 36405,
+   "time": 29.863499799976125
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 30.000000000000007,
+   "bound": 27.499999999999986,
+   "gap": 0.08333333333333402,
+   "nodes": 34667,
+   "lp_iters": 168667,
+   "time": 60.0188943,
+   "cuts": 35
+  },
+  "obj_rel_diff": 3.552713678800501e-16
+ },
+ {
+  "name": "swath",
+  "n": 6805,
+  "m": 884,
+  "nnz": 34965,
+  "ints": 6724,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 536.6295829999992,
+   "bound": 381.09343130769236,
+   "gap": 0.28983894406788063,
+   "nodes": 481,
+   "time": 60.03182870009914
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 336.6314244928571,
+   "gap": Infinity,
+   "nodes": 16656,
+   "lp_iters": 123244,
+   "time": 60.0446038,
+   "cuts": 8
+  }
+ },
+ {
+  "name": "vpm1",
+  "n": 378,
+  "m": 234,
+  "nnz": 749,
+  "ints": 168,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 20.0,
+   "bound": 20.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.03584469994530082
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 20.0,
+   "bound": 19.5,
+   "gap": 0.025,
+   "nodes": 43493,
+   "lp_iters": 194940,
+   "time": 60.0229185,
+   "cuts": 149
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "vpm2",
+  "n": 378,
+  "m": 234,
+  "nnz": 917,
+  "ints": 168,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 13.75,
+   "bound": 13.75,
+   "gap": 0.0,
+   "nodes": 51,
+   "time": 1.4725893000140786
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 15.25,
+   "bound": 12.675909884708771,
+   "gap": 0.1687927944453265,
+   "nodes": 35077,
+   "lp_iters": 298467,
+   "time": 60.0306587,
+   "cuts": 194
+  },
+  "obj_rel_diff": 0.10909090909090909
+ }
+]

@@ -31,7 +31,9 @@ REFINERY_SIZES = {
 BENCH_SEED = 7
 
 
-def refinery_lp(R=4, C=8, P=6, D=40, T=6, seed=0):
+def refinery_lp(R=4, C=8, P=6, D=40, T=6, seed=0, quad=0.0):
+    """quad > 0 turns it into a convex QP: crude price rises with volume (supply curve),
+    cost_c * x + 0.5 * q_c * x^2 with q_c = quad * price / typical run size."""
     rng = np.random.default_rng(seed)
     # indexers
     nx, ny, ns, nI, nz = C * R * T, P * R * T, P * R * D * T, P * D * T, P * D * T
@@ -103,7 +105,24 @@ def refinery_lp(R=4, C=8, P=6, D=40, T=6, seed=0):
     Kge = sp.csr_matrix((ge_v, (ge_r, ge_c)), shape=(len(ge_b), n))
     K = sp.vstack([Keq, Kge]).tocsr()
     q = np.array(eq_b + ge_b)
-    return LP(cost, K, q, len(eq_b), l, u, name=f"refinery_R{R}_C{C}_P{P}_D{D}_T{T}")
+    lp = LP(cost, K, q, len(eq_b), l, u, name=f"refinery_R{R}_C{C}_P{P}_D{D}_T{T}")
+    if quad > 0:
+        # convex cost curves on every activity (Q positive definite):
+        # crude supply curve, processing, freight congestion, quadratic holding, quadratic shortage
+        qd = np.zeros(n)
+        typ_crude, typ_prod = cap.mean() / C, cap.mean() / P
+        typ_ship, typ_inv = base_dem.mean(), tank.mean()
+        for c in range(C):
+            for r in range(R):
+                for t in range(T):
+                    qd[X(c, r, t)] = quad * crude_price[c, t] / typ_crude
+        qd[oy:oy + ny] = quad * 2.0 / typ_prod
+        qd[os_:os_ + ns] = quad * cost[os_:os_ + ns] / typ_ship
+        qd[oI:oI + nI] = quad * 0.15 / typ_inv
+        qd[oz:oz + nz] = quad * 400.0 / typ_ship
+        lp.Q = sp.diags(qd).tocsr()
+        lp.name = f"refinery_qp_R{R}_C{C}_P{P}_D{D}_T{T}"
+    return lp
 
 
 def refinery_milp(R=3, C=6, P=3, D=5, seed=0):

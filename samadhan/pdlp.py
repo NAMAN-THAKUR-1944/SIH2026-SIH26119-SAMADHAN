@@ -101,6 +101,10 @@ class PDLP:
         self.l0 = torch.where(self.l_fin, self.l, torch.zeros_like(self.l))
         self.u0 = torch.where(self.u_fin, self.u, torch.zeros_like(self.u))
         self.ineq = torch.arange(m, device=device) >= lp.n_eq
+        Q = getattr(lp, "Q", None)
+        self.Q = None
+        if Q is not None and Q.nnz:
+            self.Q = _to_torch_csr((sp.diags(dc) @ sp.csr_matrix(Q) @ sp.diags(dc)).tocsr(), device, dtype)
         self.c_norm = float(np.linalg.norm(lp.c))
         self.q_norm = float(np.linalg.norm(lp.q))
         if device == "cuda":
@@ -130,20 +134,22 @@ class PDLP:
             v = w / s
         return math.sqrt(float(s))
 
-    def _kkt(self, x, y, Kx, KTy):
-        """Residual pieces in scaled space plus relative (unscaled) errors."""
+    def _kkt(self, x, y, Kx, KTy, Qx=None):
+        """Residual pieces in scaled space plus relative (unscaled) errors. With Q: objective 0.5 x'Qx + c'x,
+        reduced costs Qx + c - K'y, Wolfe dual objective q'y - 0.5 x'Qx + bound terms."""
         r = self.q - Kx
         rp = r.clone()
         if self.n_eq < self.m:
             rp[self.n_eq:] = torch.clamp_min(r[self.n_eq:], 0.0)
-        lam = self.c - KTy
+        lam = self.c - KTy if Qx is None else self.c + Qx - KTy
         lam_pos = torch.clamp_min(lam, 0.0)
         lam_neg = torch.clamp_min(-lam, 0.0)
         rd = torch.where(self.l_fin, torch.zeros_like(lam), lam_pos) + \
              torch.where(self.u_fin, torch.zeros_like(lam), lam_neg)
-        pobj = torch.dot(self.c, x)
+        quad = 0.5 * torch.dot(x, Qx) if Qx is not None else torch.zeros((), dtype=x.dtype, device=x.device)
+        pobj = torch.dot(self.c, x) + quad
         dobj = torch.dot(self.q, y) + torch.dot(self.l0, torch.where(self.l_fin, lam_pos, 0.0)) \
-            - torch.dot(self.u0, torch.where(self.u_fin, lam_neg, 0.0))
+            - torch.dot(self.u0, torch.where(self.u_fin, lam_neg, 0.0)) - quad
         vals = torch.stack([
             torch.linalg.vector_norm(rp), torch.linalg.vector_norm(rd),
             torch.linalg.vector_norm(rp / self.dr), torch.linalg.vector_norm(rd / self.dc),
@@ -159,10 +165,14 @@ class PDLP:
     def _kkt_w(k, w):
         return math.sqrt((w * k["rp"]) ** 2 + (k["rd"] / w) ** 2 + k["gap"] ** 2)
 
-    # ------------------------------------------------------------------ CUDA-graph fast path
+    # ------------------------------------------------------------------ constant-step path (LP and QP)
     def _step_inplace(self, S):
-        """One constant-step PDHG iteration, entirely in place on the static buffers in S."""
-        xn = torch.clamp(S["x"] - S["tau"] * (self.c - S["KTy"]), min=self.l, max=self.u)
+        """One constant-step PDHG iteration, entirely in place on the static buffers in S.
+        With a quadratic objective the primal step uses the gradient Qx + c - K'y (linearised PDHG)."""
+        grad = self.c - S["KTy"]
+        if self.Q is not None:
+            grad = grad + S["Qx"]
+        xn = torch.clamp(S["x"] - S["tau"] * grad, min=self.l, max=self.u)
         Kxn = torch.mv(self.K, xn)
         v = S["y"] + S["sigma"] * (self.q - 2 * Kxn + S["Kx"])
         yn = torch.where(self.ineq, torch.clamp_min(v, 0.0), v)
@@ -172,10 +182,35 @@ class PDLP:
         a = 1.0 / S["k"]
         S["xs"].lerp_(S["x"], a); S["ys"].lerp_(S["y"], a)
         S["Kxs"].lerp_(S["Kx"], a); S["KTys"].lerp_(S["KTy"], a)
+        if self.Q is not None:
+            S["Qx"].copy_(torch.mv(self.Q, xn))
+            S["Qxs"].lerp_(S["Qx"], a)
+
+    def _norm_Q(self, iters=40):
+        v = torch.ones(self.n, dtype=self.dtype, device=self.device)
+        v /= torch.linalg.vector_norm(v)
+        s = torch.zeros((), dtype=self.dtype, device=self.device)
+        for _ in range(iters):
+            w = torch.mv(self.Q, v)
+            s = torch.linalg.vector_norm(w)
+            if float(s) == 0.0:
+                return 0.0
+            v = w / s
+        return float(s)
+
+    def _steps(self, S, w, eta, nK, LQ):
+        """Primal/dual step sizes for primal weight w; with Q, tau satisfies 1/tau >= LQ/2 + sigma*||K||^2."""
+        if self.Q is None:
+            S["tau"].fill_(eta / w); S["sigma"].fill_(eta * w)
+        else:
+            sigma = eta * w
+            S["sigma"].fill_(sigma); S["tau"].fill_(0.998 / (LQ / 2 + sigma * nK * nK))
 
     def _solve_graph(self, tol, max_iter, time_limit, eval_every, verbose):
         dev, dt = self.device, self.dtype
-        torch.cuda.synchronize()
+        cuda = dev == "cuda"
+        if cuda:
+            torch.cuda.synchronize()
         t0 = time.perf_counter()
         z = lambda k: torch.zeros(k, dtype=dt, device=dev)
         S = dict(x=self._proj_x(z(self.n)), y=z(self.m))
@@ -183,37 +218,49 @@ class PDLP:
                  xs=z(self.n), ys=z(self.m), Kxs=z(self.m), KTys=z(self.n),
                  tau=torch.zeros((), dtype=dt, device=dev), sigma=torch.zeros((), dtype=dt, device=dev),
                  k=torch.zeros((), dtype=dt, device=dev))
+        if self.Q is not None:
+            S.update(Qx=torch.mv(self.Q, S["x"]), Qxs=z(self.n))
         cn = float(torch.linalg.vector_norm(self.c)); qn = float(torch.linalg.vector_norm(self.q))
         w = cn / qn if cn > 1e-10 and qn > 1e-10 else 1.0
-        eta = 0.998 / max(self._norm_K(), 1e-12)
-        S["tau"].fill_(eta / w); S["sigma"].fill_(eta * w)
+        nK = max(self._norm_K(), 1e-12)
+        LQ = self._norm_Q() if self.Q is not None else 0.0
+        eta = 0.998 / nK
+        self._steps(S, w, eta, nK, LQ)
+        cur = ("x", "y", "Kx", "KTy") + (("Qx",) if self.Q is not None else ())
+        avg = ("xs", "ys", "Kxs", "KTys") + (("Qxs",) if self.Q is not None else ())
+        kkt = lambda nm: self._kkt(S[nm[0]], S[nm[1]], S[nm[2]], S[nm[3]], S[nm[4]] if len(nm) > 4 else None)
 
-        # warm up on a side stream, then capture eval_every iterations as one graph
-        s = torch.cuda.Stream()
-        s.wait_stream(torch.cuda.current_stream())
-        with torch.cuda.stream(s):
-            for _ in range(3):
-                self._step_inplace(S)
-        torch.cuda.current_stream().wait_stream(s)
-        g = torch.cuda.CUDAGraph()
-        with torch.cuda.graph(g):
-            for _ in range(eval_every):
-                self._step_inplace(S)
-        k_total = k_since = 3  # warm-up iterations; capture itself does no work
+        if cuda:   # warm up on a side stream, then capture eval_every iterations as one graph
+            s = torch.cuda.Stream()
+            s.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(s):
+                for _ in range(3):
+                    self._step_inplace(S)
+            torch.cuda.current_stream().wait_stream(s)
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g):
+                for _ in range(eval_every):
+                    self._step_inplace(S)
+            k_total = k_since = 3
+            run_block = g.replay
+        else:
+            k_total = k_since = 0
+            def run_block():
+                for _ in range(eval_every):
+                    self._step_inplace(S)
 
         x_rs, y_rs = S["x"].clone(), S["y"].clone()
-        k0 = self._kkt(S["x"], S["y"], S["Kx"], S["KTy"])
+        k0 = kkt(cur)
         kkt_rs, kkt_prev_cand = self._kkt_w(k0, w), float("inf")
         restarts, status = 0, "iteration_limit"
         best = (k0, S["x"].clone(), S["y"].clone())
         while k_total < max_iter:
-            g.replay()
+            run_block()
             k_total += eval_every; k_since += eval_every
-            kc = self._kkt(S["x"], S["y"], S["Kx"], S["KTy"])
-            ka = self._kkt(S["xs"], S["ys"], S["Kxs"], S["KTys"])
+            kc, ka = kkt(cur), kkt(avg)
             use_avg = self._kkt_w(ka, w) < self._kkt_w(kc, w)
             kcand = ka if use_avg else kc
-            names = ("xs", "ys", "Kxs", "KTys") if use_avg else ("x", "y", "Kx", "KTy")
+            names = avg if use_avg else cur
             if max(kcand["rel"]) < max(best[0]["rel"]):
                 best = (kcand, S[names[0]].clone(), S[names[1]].clone())
             elapsed = time.perf_counter() - t0
@@ -230,33 +277,34 @@ class PDLP:
             kw = self._kkt_w(kcand, w)
             if (kw <= 0.2 * kkt_rs) or (kw <= 0.8 * kkt_rs and kw > kkt_prev_cand) or (k_since >= 0.36 * k_total):
                 if use_avg:
-                    for a_, b_ in zip(("x", "y", "Kx", "KTy"), names):
+                    for a_, b_ in zip(cur, names):
                         S[a_].copy_(S[b_])
                 ddx = float(torch.linalg.vector_norm(S["x"] - x_rs))
                 ddy = float(torch.linalg.vector_norm(S["y"] - y_rs))
                 if ddx > 1e-10 and ddy > 1e-10:
                     w = math.exp(0.5 * math.log(ddy / ddx) + 0.5 * math.log(w))
-                S["tau"].fill_(eta / w); S["sigma"].fill_(eta * w)
+                self._steps(S, w, eta, nK, LQ)
                 x_rs, y_rs = S["x"].clone(), S["y"].clone()
-                for nm in ("xs", "ys", "Kxs", "KTys", "k"):
+                for nm in avg + ("k",):
                     S[nm].zero_()
                 kkt_rs, kkt_prev_cand, k_since = self._kkt_w(kcand, w), float("inf"), 0
                 restarts += 1
             else:
                 kkt_prev_cand = kw
-        torch.cuda.synchronize()
+        if cuda:
+            torch.cuda.synchronize()
         solve_time = time.perf_counter() - t0
         kb, xb, yb = best
         return Result(status, (xb * self.dc).cpu().numpy(), (yb * self.dr).cpu().numpy(), kb["p"], kb["d"],
                       kb["rel"][2], kb["rel"][0], kb["rel"][1], k_total, 2 * k_total + 80, restarts,
-                      solve_time, self.setup_time, dev + "+graph")
+                      solve_time, self.setup_time, dev + ("+graph" if cuda else ""))
 
     # ------------------------------------------------------------------ main loop
     def solve(self, tol=1e-4, max_iter=200_000, time_limit=600.0, eval_every=64, verbose=False, adaptive=True):
         """adaptive=True: PDLP adaptive step (one host sync per iteration).
         adaptive=False: constant step 0.998/||K||, no host sync between KKT checks; on CUDA each block of
         eval_every iterations is captured once as a CUDA graph and replayed (one launch per block)."""
-        if not adaptive and self.device == "cuda":
+        if not adaptive or self.Q is not None:   # QP always uses the constant-step (linearised) method
             return self._solve_graph(tol, max_iter, time_limit, eval_every, verbose)
         dev, dt = self.device, self.dtype
         sync = (lambda: torch.cuda.synchronize()) if dev == "cuda" else (lambda: None)

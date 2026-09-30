@@ -60,3 +60,52 @@ def test_milp_matches_highs(seed):
     lp = refinery_milp(seed=seed)
     r = solve_milp(lp)
     assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
+
+
+# ---------------------------------------------------------------- C++ core (dual simplex + branch-and-cut)
+def test_core_lp_matches_highs():
+    from samadhan.core import solve_core
+    lp = refinery_lp(R=3, C=5, P=4, D=20, T=4, seed=1)
+    r = solve_core(lp)
+    assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
+
+
+def test_core_tiny():
+    from samadhan.core import solve_core
+    r = solve_core(read_mps(TINY))
+    assert r.status == "optimal" and r.obj == pytest.approx(-36.0) and r.x[:2] == pytest.approx([2.0, 6.0])
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_core_milp_matches_highs(seed):
+    from samadhan.core import solve_core
+    lp = refinery_milp(R=4, C=8, P=3, D=6, seed=seed)
+    r = solve_core(lp, time_limit=60)
+    assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
+
+
+def test_core_milp_without_cuts():
+    from samadhan.core import solve_core
+    lp = refinery_milp(seed=1)
+    r = solve_core(lp, cut_rounds=0)
+    assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
+
+
+# ---------------------------------------------------------------- QP (restarted PDHG with a quadratic term)
+@pytest.mark.parametrize("device", DEVICES)
+def test_qp_refinery_matches_highs(device):
+    lp = refinery_lp(R=3, C=5, P=4, D=20, T=4, seed=1, quad=0.3)
+    ref = solve_highs(lp)["obj"]
+    r = PDLP(lp, device=device).solve(tol=1e-6, max_iter=2_000_000)
+    assert r.status == "optimal" and rel(r.primal_obj, ref) < 1e-5
+
+
+def test_qp_maros_meszaros_hs21():
+    """HS21 from the Maros-Meszaros set, written inline: min 0.01 x1^2 + x2^2 - 100, 10 x1 - x2 >= 10."""
+    import numpy as np
+    import scipy.sparse as sp
+    from samadhan.lp import LP
+    lp = LP(np.zeros(2), sp.csr_matrix([[10.0, -1.0]]), np.array([10.0]), 0, np.array([2.0, -50.0]),
+            np.array([50.0, 50.0]), obj_const=-100.0, Q=sp.csr_matrix(np.diag([0.02, 2.0])))
+    r = PDLP(lp, device="cpu").solve(tol=1e-8, max_iter=1_000_000)
+    assert r.status == "optimal" and r.primal_obj == pytest.approx(-99.96, abs=1e-5)

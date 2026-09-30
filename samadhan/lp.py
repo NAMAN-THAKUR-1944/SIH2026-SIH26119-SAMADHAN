@@ -24,6 +24,7 @@ class LP:
     name: str = "lp"
     col_names: list = field(default_factory=list)
     integer: np.ndarray | None = None  # bool mask, used by the MILP layer
+    Q: sp.csr_matrix | None = None      # quadratic objective 0.5 x'Qx (symmetric PSD), used by the QP layer
 
     @property
     def shape(self):
