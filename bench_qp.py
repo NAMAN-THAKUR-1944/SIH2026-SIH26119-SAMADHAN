@@ -38,18 +38,42 @@ def maros_one(path, time_limit, tol):
     return out
 
 
+def maros_isolated(path, time_limit, tol):
+    """Run one problem in its own process, so a crash in any solver cannot take the benchmark down."""
+    import subprocess, sys
+    name = os.path.basename(path).split(".")[0]
+    try:
+        p = subprocess.run([sys.executable, "-W", "ignore", __file__, "_one", path, str(time_limit), str(tol)],
+                           capture_output=True, text=True, timeout=4 * time_limit + 120)
+        lines = [l for l in p.stdout.splitlines() if l.startswith("{")]
+        if p.returncode == 0 and lines:
+            return json.loads(lines[-1])
+        return dict(name=name, error=f"process exited with code {p.returncode}")
+    except subprocess.TimeoutExpired:
+        return dict(name=name, error="process timeout")
+
+
 def maros(a):
+    from concurrent.futures import ThreadPoolExecutor
     files = sorted(glob.glob("data/maros/*.mat"))
+    if a.only:
+        files = [f for f in files if os.path.basename(f).split(".")[0] in a.only]
+    prev = {}
+    if a.only and os.path.exists("results/qp_maros.json"):
+        prev = {r["name"]: r for r in json.load(open("results/qp_maros.json"))}
     res = []
-    with ProcessPoolExecutor(a.workers) as ex:
-        for fu in as_completed([ex.submit(maros_one, f, a.time_limit, a.tol) for f in files]):
+    with ThreadPoolExecutor(a.workers) as ex:
+        for fu in as_completed([ex.submit(maros_isolated, f, a.time_limit, a.tol) for f in files]):
             r = fu.result()
             res.append(r)
             s, h = r.get("samadhan", {}), r.get("highs", {})
             print(f"{r['name']:10} n={r.get('n', 0):6} m={r.get('m', 0):6}  SAMADHAN {s.get('status', r.get('error', '?'))[:16]:16}"
                   f" {s.get('time', 0):6.1f}s  HiGHS {h.get('status', '-')[:14]:14} {h.get('time', 0):6.1f}s"
                   f"  diff {r.get('obj_rel_diff', float('nan')):.1e}", flush=True)
-            json.dump(sorted(res, key=lambda x: x["name"]), open("results/qp_maros.json", "w"), indent=1)
+            prev[r["name"]] = r
+            json.dump(sorted(prev.values(), key=lambda x: x["name"]), open("results/qp_maros.json", "w"), indent=1,
+                      default=float)
+    res = list(prev.values())
     ok = [r for r in res if r.get("samadhan", {}).get("status") == "optimal"]
     hok = [r for r in res if r.get("highs", {}).get("status") == "Optimal"]
     both = [r for r in ok if "obj_rel_diff" in r]
@@ -78,11 +102,16 @@ def refinery(a):
 
 
 if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "_one":        # worker mode: one problem, JSON on stdout
+        print(json.dumps(maros_one(sys.argv[2], float(sys.argv[3]), float(sys.argv[4])), default=float))
+        sys.exit(0)
     ap = argparse.ArgumentParser()
     ap.add_argument("which", choices=["maros", "refinery"])
     ap.add_argument("sizes", nargs="*", default=["S", "M", "L", "XL"])
     ap.add_argument("--time-limit", type=float, default=60.0)
     ap.add_argument("--tol", type=float, default=1e-6)
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--only", nargs="*", default=[], help="rerun only these problems (merged into the results)")
     a = ap.parse_args()
     maros(a) if a.which == "maros" else refinery(a)

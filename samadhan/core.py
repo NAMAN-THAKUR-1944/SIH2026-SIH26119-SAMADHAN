@@ -28,10 +28,10 @@ def build(verbose=False):
     LIBDIR.mkdir(exist_ok=True)
     out = LIBDIR / LIBNAME
     target = "x86_64-windows-gnu" if os.name == "nt" else "x86_64-linux-gnu"
-    cmd = [sys.executable, "-m", "ziglang", "c++", "-O3", "-std=c++17", "-shared", "-w", "-target", target,
-           "-o", str(out), str(SRC)]
+    cmd = [sys.executable, "-m", "ziglang", "c++", "-O3", "-std=c++17", "-shared", "-w"]
     if os.name != "nt":
-        cmd.insert(-4, "-fPIC")
+        cmd.append("-fPIC")
+    cmd += ["-target", target, "-o", str(out), str(SRC)]
     res = subprocess.run(cmd, capture_output=not verbose, text=True)
     if res.returncode != 0:
         raise RuntimeError(f"C++ core build failed:\n{res.stderr}")

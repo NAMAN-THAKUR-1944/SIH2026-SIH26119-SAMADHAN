@@ -100,6 +100,21 @@ def test_qp_refinery_matches_highs(device):
     assert r.status == "optimal" and rel(r.primal_obj, ref) < 1e-5
 
 
+def test_maros_reader_infinity_encoding(tmp_path):
+    """Maros-Meszaros files encode infinity as +-1e20, sometimes as -9.999999999999998e19: both must be infinite."""
+    import numpy as np
+    import scipy.io as sio
+    import scipy.sparse as sp
+    from samadhan.qpdata import read_maros
+    f = tmp_path / "t.mat"
+    sio.savemat(f, dict(P=sp.csc_matrix(np.eye(2)), q=np.zeros((2, 1)), r=np.zeros((1, 1)),
+                        A=sp.csc_matrix(np.array([[1.0, 1.0], [1.0, 0.0], [0.0, 1.0]])),
+                        l=np.array([[-9.999999999999998e19], [0.0], [0.0]]), u=np.array([[4.0], [1e20], [3.0]])))
+    lp = read_maros(f)
+    assert lp.K.shape == (1, 2) and lp.q[0] == -4.0              # only  x1 + x2 <= 4  remains as a row
+    assert list(lp.l) == [0.0, 0.0] and lp.u[0] == np.inf and lp.u[1] == 3.0
+
+
 def test_qp_maros_meszaros_hs21():
     """HS21 from the Maros-Meszaros set, written inline: min 0.01 x1^2 + x2^2 - 100, 10 x1 - x2 >= 10."""
     import numpy as np

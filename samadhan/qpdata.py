@@ -8,7 +8,7 @@ import scipy.sparse as sp
 
 from .lp import LP
 
-BIG = 1e20
+BIG = 1e19   # the files use +-1e20 for infinity, some stored as -9.999999999999998e19
 
 
 def read_maros(path, name=None):
