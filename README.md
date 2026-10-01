@@ -19,7 +19,10 @@ HiGHS, CBC or SCIP code inside. It has two engines:
 HiGHS, the leading open-source solver, is used only as an outside referee for answers and speed.
 
 ▶ **3-minute demo video:** [youtu.be/zagX0zqtIeU](https://youtu.be/zagX0zqtIeU) (a real 1.16 M-variable run, the head-to-head with HiGHS, and all benchmark results)
+
 📄 **Idea deck:** [`docs/SAMADHAN_SIH26119_Idea.pdf`](docs/SAMADHAN_SIH26119_Idea.pdf)
+
+🧪 **Check it yourself in 5 minutes:** [two Docker commands](#evaluate-it-in-5-minutes), nothing else to install
 
 [![SAMADHAN demo video](docs/img/video_thumbnail.png)](https://youtu.be/zagX0zqtIeU)
 
@@ -37,6 +40,63 @@ below, and are stored in [`results/`](results).
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
 ![LP scaling](docs/img/lp_scaling.png)
+
+## Evaluate it in 5 minutes
+
+Only Docker is needed: no Python, CUDA or compiler. Build the image straight from this repository, then run it:
+
+```bash
+docker build -t samadhan https://github.com/NAMAN-THAKUR-1944/SIH2026-SIH26119-SAMADHAN.git
+docker run --rm samadhan
+```
+
+The build takes a few minutes (it downloads PyTorch and compiles the C++ core). The run is a self-check of
+both engines: small LP, QP and MILP models are solved, every answer is compared with HiGHS or with an optimum
+worked out by hand, and feasibility is recomputed from the returned solution vector instead of trusting the
+solver's own report. Real output on a laptop CPU:
+
+```text
+SAMADHAN self-check   GPU engine on CPU (no CUDA GPU found)   referee: HiGHS 1.15.1
+
+     model                      vars  engine             SAMADHAN      reference            obj. err  infeas.    time
+---------------------------------------------------------------------------------------------------------------------
+LP   textbook (2 vars)             2  GPU engine              -36            -36  by hand    5.6e-10  0.0e+00   0.03s  PASS
+LP   textbook (2 vars)             2  C++ core                -36            -36  by hand    0.0e+00  0.0e+00   0.00s  PASS
+LP   refinery planning         1,708  GPU engine        87491.691      87491.468  HiGHS      2.6e-06  9.6e-07   1.06s  PASS
+LP   refinery planning         1,708  C++ core          87491.468      87491.468  HiGHS      8.3e-16  4.3e-15   0.04s  PASS
+QP   HS21, Maros-Meszaros          2  GPU engine           -99.96         -99.96  by hand    0.0e+00  0.0e+00   0.01s  PASS
+QP   refinery, convex costs    1,708  GPU engine        113146.25      113146.25  HiGHS      1.9e-08  5.8e-07   0.61s  PASS
+MILP textbook knapsack             2  C++ core                -20            -20  by hand    0.0e+00  0.0e+00   0.00s  PASS
+MILP refinery contracts #0       146  C++ core           27531.34       27531.34  HiGHS      1.2e-15  1.9e-14   0.02s  PASS
+MILP refinery contracts #1       146  C++ core          23781.574      23781.574  HiGHS      3.4e-15  5.4e-13   0.03s  PASS
+MILP refinery contracts #2       146  C++ core          44110.416      44110.416  HiGHS      1.6e-16  2.4e-14   0.00s  PASS
+
+10/10 checks passed in 3.0 s.  obj. err = relative distance to the reference;
+infeas. = worst constraint, bound or integrality violation, recomputed here from the solution vector.
+```
+
+Then try:
+
+| To see | Run |
+|---|---|
+| Your own model (LP goes to the GPU engine, MILP to the C++ core) | `docker run --rm -v "$PWD:/models" samadhan solve /models/model.mps` |
+| A 110k-variable refinery planning LP (about 10 s on a CPU) | `docker run --rm samadhan demo --size M --device cpu` |
+| The full test suite | `docker run --rm --entrypoint python samadhan -m pytest -q` |
+
+**On an NVIDIA GPU** (Windows: Docker Desktop with the WSL 2 engine; Linux: the NVIDIA Container Toolkit), build
+the CUDA image (about 4 GB) and solve the 1.16 M-variable refinery LP:
+
+```bash
+docker build --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu128 -t samadhan:gpu https://github.com/NAMAN-THAKUR-1944/SIH2026-SIH26119-SAMADHAN.git
+docker run --rm --gpus all samadhan:gpu demo --size XL --tol 1e-6
+```
+
+On the RTX 5050 laptop this takes 73.7 s inside Docker and 65.5 s natively (the same 1.2 ms per iteration; the
+Docker run needed more iterations), against 323 s for HiGHS. `docker run --rm --gpus all samadhan:gpu` runs the
+self-check on the GPU, and all 28 tests pass in the GPU image.
+
+In Windows PowerShell write `${PWD}` instead of `$PWD`. Every number in this README has its raw data in
+[`results/`](results) and the command that produced it under [Reproduce every number](#reproduce-every-number).
 
 ## Architecture
 
@@ -105,13 +165,14 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
 * First-order methods reach 1e-4…1e-6 relative accuracy, not simplex vertices; crossover is on the roadmap.
 * The MILP core has no presolve yet and only Gomory cuts, and uses a dense basis inverse (≤ ~1,500 rows).
 
-## Quick start
+## Install without Docker
 
 ```bash
 python -m venv .venv
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128   # or /whl/cpu
 .venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/python -m pytest                                  # 27 correctness tests, ~20 s
+.venv/Scripts/python -m samadhan verify                         # self-check of both engines, ~10 s
+.venv/Scripts/python -m pytest                                  # 28 correctness tests, ~20 s
 .venv/Scripts/python -m samadhan demo --size XL --tol 1e-6      # 1.16M-variable refinery LP on the GPU
 .venv/Scripts/python -m samadhan solve model.mps                # LP -> GPU engine, MILP -> C++ core
 .venv/Scripts/python -m samadhan solve model.mps --engine core  # force the C++ dual simplex / branch-and-cut
@@ -127,7 +188,7 @@ print(solve_core(lp, time_limit=60).obj)               # C++ core: LP or MILP (i
 
 The C++ core is compiled automatically on first use with the zig toolchain (installed from PyPI with the
 requirements), so no system compiler is needed. CI lints the code, builds the core and runs the tests on
-Ubuntu and Windows for every push.
+Ubuntu and Windows for every push, and builds the Docker image and runs the self-check inside it.
 
 ## Reproduce every number
 
@@ -156,8 +217,10 @@ samadhan/            the solver package
   simplex.py, milp.py  pure-Python reference simplex and branch-and-bound, used to cross-check the C++ core
   generate.py        refinery planning LP / QP / MILP generators
   baseline.py        HiGHS referee (LP, QP, MILP), used only for benchmarks and tests
+  verify.py          self-check: python -m samadhan verify
   __main__.py        command line: python -m samadhan
 cpp/samadhan_core.cpp  C++17 dual simplex and branch-and-cut (C ABI)
+Dockerfile           CPU image by default; CUDA image with --build-arg TORCH_INDEX=.../whl/cu128
 benchmarks/          one script per benchmark; results/ holds their raw JSON output
 tests/               pytest suite: every component checked against HiGHS or a hand-computed optimum
 docs/                idea deck (PDF), figures and the script that draws them

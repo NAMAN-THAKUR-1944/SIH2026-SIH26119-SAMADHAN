@@ -1,6 +1,7 @@
 """Command line:
     python -m samadhan solve model.mps [--engine auto|gpu|core] [--device cuda|cpu] [--tol 1e-6]
     python -m samadhan demo [--size S|M|L|XL]      (generated refinery planning LP on the GPU engine)
+    python -m samadhan verify                      (self-check: every engine against HiGHS or a hand-worked optimum)
 
 --engine auto (default) sends models with integer variables to the C++ branch-and-cut core and all other
 models to the GPU engine.
@@ -38,6 +39,9 @@ def main(argv=None):
                    help="auto: C++ core for models with integer variables, GPU engine otherwise")
     d = sub.add_parser("demo", help="solve a generated refinery planning LP")
     d.add_argument("--size", default="S", choices=["S", "M", "L", "XL"])
+    v = sub.add_parser("verify", help="self-check: solve small LP, QP and MILP models with both engines and "
+                                      "compare every answer with HiGHS or an optimum worked out by hand")
+    v.add_argument("--device", default="cuda", choices=["cuda", "cpu"], help="GPU engine device")
     for p in (s, d):
         p.add_argument("--device", default="cuda", choices=["cuda", "cpu"], help="GPU engine device")
         p.add_argument("--tol", type=float, default=1e-4, help="GPU engine: relative KKT tolerance")
@@ -47,6 +51,9 @@ def main(argv=None):
         p.add_argument("--quiet", action="store_true")
     a = ap.parse_args(argv)
 
+    if a.cmd == "verify":
+        from .verify import run
+        return run(device=a.device)
     if a.cmd == "solve":
         from .mps import read_mps
         lp = read_mps(a.file)

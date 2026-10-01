@@ -27,3 +27,14 @@ jobs:
         run: python -c "from samadhan.core import build; print(build())"
       - name: Run tests
         run: python -m pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the image
+        run: docker build -t samadhan .
+      - name: Self-check inside the container
+        run: docker run --rm samadhan
+      - name: Solve a model file mounted from the host
+        run: docker run --rm -v "$PWD/tests:/models" samadhan solve /models/tiny_milp.mps --quiet

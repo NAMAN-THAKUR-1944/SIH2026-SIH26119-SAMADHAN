@@ -1,0 +1,14 @@
+.git
+.github
+.venv*
+**/__pycache__
+.pytest_cache
+.ruff_cache
+samadhan/_lib
+data
+deck
+video
+docs
+*.md
+!README.md
+SIH_FORM_TEXT.txt

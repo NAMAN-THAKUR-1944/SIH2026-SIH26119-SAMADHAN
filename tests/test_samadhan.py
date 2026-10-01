@@ -108,6 +108,12 @@ def test_cli_routes_milp_to_core(capsys):
     assert "C++ core" in out and "-20" in out
 
 
+def test_cli_verify(capsys):
+    from samadhan.__main__ import main
+    assert main(["verify", "--device", "cpu"]) == 0
+    assert "10/10 checks passed" in capsys.readouterr().out
+
+
 def test_cli_lp_on_cpu(capsys):
     from samadhan.__main__ import main
     assert main(["solve", str(TINY), "--device", "cpu", "--tol", "1e-8", "--quiet"]) == 0
