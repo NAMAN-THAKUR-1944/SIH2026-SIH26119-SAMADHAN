@@ -84,7 +84,7 @@ Then try:
 | The full test suite | `docker run --rm --entrypoint python samadhan -m pytest -q` |
 
 **On an NVIDIA GPU** (Windows: Docker Desktop with the WSL 2 engine; Linux: the NVIDIA Container Toolkit), build
-the CUDA image (about 4 GB) and solve the 1.16 M-variable refinery LP:
+the CUDA image (it needs about 12 GB of disk) and solve the 1.16 M-variable refinery LP:
 
 ```bash
 docker build --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu128 -t samadhan:gpu https://github.com/NAMAN-THAKUR-1944/SIH2026-SIH26119-SAMADHAN.git
