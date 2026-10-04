@@ -13,7 +13,7 @@ cuPDLP, 2023):
 import math
 import time
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import scipy.sparse as sp
@@ -41,6 +41,8 @@ class Result:
     solve_time: float
     setup_time: float
     device: str
+    vertex: bool = False            # x is an exact optimal vertex (after crossover)
+    crossover_time: float = 0.0
 
 
 # --------------------------------------------------------------------------- preconditioning
@@ -412,5 +414,15 @@ class PDLP:
                       k_total, matvecs, restarts, solve_time, self.setup_time, dev)
 
 
-def solve(lp: LP, device="cuda", **kw) -> Result:
-    return PDLP(lp, device=device).solve(**kw)
+def solve(lp: LP, device="cuda", crossover=False, **kw) -> Result:
+    """GPU engine. With crossover=True (LP only) the first-order solution is turned into an exact optimal vertex
+    by the C++ simplex (samadhan.core.crossover); y stays the first-order dual estimate."""
+    r = PDLP(lp, device=device).solve(**kw)
+    if not crossover or (lp.Q is not None and lp.Q.nnz):
+        return r
+    from .core import crossover as run_crossover
+    c = run_crossover(lp, r.x, time_limit=max(kw.get("time_limit", 600.0) - r.solve_time, 1.0))
+    if c.status != "optimal":
+        return r
+    return replace(r, status="optimal", x=c.x, primal_obj=c.obj, dual_obj=c.obj, rel_gap=0.0, rel_primal_res=0.0,
+                   vertex=True, crossover_time=c.time)

@@ -17,12 +17,12 @@
   "samadhan": {
    "status": "no_solution_found",
    "obj": Infinity,
-   "bound": 923.9999999999822,
+   "bound": 923.9999999999992,
    "gap": Infinity,
-   "nodes": 1721,
-   "lp_iters": 68416,
-   "time": 60.0229164,
-   "cuts": 240
+   "nodes": 23627,
+   "lp_iters": 290635,
+   "time": 60.00217190013738,
+   "cuts": 180
   }
  },
  {
@@ -46,9 +46,9 @@
    "bound": 340160.0,
    "gap": 0.0,
    "nodes": 0,
-   "lp_iters": 446,
-   "time": 0.084474,
-   "cuts": 36
+   "lp_iters": 422,
+   "time": 0.08311339987078607,
+   "cuts": 35
   },
   "obj_rel_diff": 0.0
  },
@@ -68,15 +68,16 @@
    "time": 49.18427069997415
   },
   "samadhan": {
-   "status": "no_solution_found",
-   "obj": Infinity,
-   "bound": 55598.78627718012,
-   "gap": Infinity,
-   "nodes": 25,
-   "lp_iters": 7168,
-   "time": 60.0582599,
-   "cuts": 180
-  }
+   "status": "time_limit",
+   "obj": 56373.99999999998,
+   "bound": 55634.603393769175,
+   "gap": 0.013115915248710452,
+   "nodes": 186,
+   "lp_iters": 36195,
+   "time": 60.001258799866825,
+   "cuts": 240
+  },
+  "obj_rel_diff": 0.0042218144895510455
  },
  {
   "name": "air05",
@@ -95,15 +96,15 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": 27035.00000000008,
-   "bound": 26007.946255501836,
-   "gap": 0.03798978156087445,
-   "nodes": 157,
-   "lp_iters": 16704,
-   "time": 60.2167624,
+   "obj": 26374.00000000001,
+   "bound": 26155.825344867924,
+   "gap": 0.008272338482296448,
+   "nodes": 398,
+   "lp_iters": 43707,
+   "time": 60.00037019983157,
    "cuts": 240
   },
-  "obj_rel_diff": 0.025062561613713084
+  "obj_rel_diff": 0.0
  },
  {
   "name": "arki001",
@@ -121,14 +122,14 @@
    "time": 60.004431900102645
   },
   "samadhan": {
-   "status": "no_solution_found",
-   "obj": Infinity,
-   "bound": 7579984.404805588,
-   "gap": Infinity,
-   "nodes": 3121,
-   "lp_iters": 28790,
-   "time": 60.1099185,
-   "cuts": 47
+   "status": "time_limit",
+   "obj": 7581349.157238483,
+   "bound": 7580155.434459265,
+   "gap": 0.00015745519095085742,
+   "nodes": 151523,
+   "lp_iters": 855340,
+   "time": 60.017970700160625,
+   "cuts": 42
   }
  },
  {
@@ -151,9 +152,9 @@
    "obj": 878430.3159999999,
    "bound": 878430.3159999999,
    "gap": 0.0,
-   "nodes": 92209,
-   "lp_iters": 451400,
-   "time": 16.3745549,
+   "nodes": 111516,
+   "lp_iters": 482016,
+   "time": 8.405755600040138,
    "cuts": 25
   },
   "obj_rel_diff": 1.6168236687867544e-14
@@ -175,15 +176,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 8966413.705379998,
-   "bound": 8966413.705379998,
+   "obj": 8966492.920132801,
+   "bound": 8966492.920132801,
    "gap": 0.0,
-   "nodes": 429461,
-   "lp_iters": 587334,
-   "time": 25.7567049,
-   "cuts": 23
+   "nodes": 220321,
+   "lp_iters": 331165,
+   "time": 8.835040099958539,
+   "cuts": 22
   },
-  "obj_rel_diff": 8.045430468172783e-07
+  "obj_rel_diff": 9.639158439008434e-06
  },
  {
   "name": "blend2",
@@ -205,10 +206,10 @@
    "obj": 7.598985,
    "bound": 7.598985,
    "gap": 0.0,
-   "nodes": 10994,
-   "lp_iters": 97109,
-   "time": 8.1283377,
-   "cuts": 52
+   "nodes": 9975,
+   "lp_iters": 79894,
+   "time": 3.0872759000065058,
+   "cuts": 94
   },
   "obj_rel_diff": 0.0
  },
@@ -218,7 +219,26 @@
   "m": 2176,
   "nnz": 48243,
   "ints": 6000,
-  "skipped": "2176 rows > 1500"
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": -2451279.0,
+   "bound": -2451485.0,
+   "gap": 8.403776151143954e-05,
+   "nodes": 1,
+   "time": 1.9746166998520494
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": -2451274.0,
+   "bound": -2451274.0,
+   "gap": 0.0,
+   "nodes": 449,
+   "lp_iters": 6845,
+   "time": 0.5667165999821097,
+   "cuts": 1
+  },
+  "obj_rel_diff": 2.0397514929961054e-06
  },
  {
   "name": "dano3mip",
@@ -226,7 +246,25 @@
   "m": 3202,
   "nnz": 79655,
   "ints": 552,
-  "skipped": "3202 rows > 1500"
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 784.3750000000005,
+   "bound": 577.0141566430385,
+   "gap": 0.26436442180967246,
+   "nodes": 0,
+   "time": 60.105312400031835
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": Infinity,
+   "bound": -Infinity,
+   "gap": Infinity,
+   "nodes": 0,
+   "lp_iters": 111026,
+   "time": 59.99912889995995,
+   "cuts": 0
+  }
  },
  {
   "name": "danoint",
@@ -244,14 +282,14 @@
    "time": 60.00459299981594
   },
   "samadhan": {
-   "status": "no_solution_found",
-   "obj": Infinity,
-   "bound": 62.69,
-   "gap": Infinity,
-   "nodes": 233,
-   "lp_iters": 29760,
-   "time": 60.0234886,
-   "cuts": 79
+   "status": "time_limit",
+   "obj": 66.375,
+   "bound": 62.89100416994535,
+   "gap": 0.05248957936052207,
+   "nodes": 7396,
+   "lp_iters": 601872,
+   "time": 59.99972989992442,
+   "cuts": 90
   }
  },
  {
@@ -271,15 +309,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 188186.49999999997,
-   "bound": 188186.49999999997,
+   "obj": 188193.40000000002,
+   "bound": 188193.40000000002,
    "gap": 0.0,
-   "nodes": 285,
-   "lp_iters": 8755,
-   "time": 7.4378923,
-   "cuts": 359
+   "nodes": 251,
+   "lp_iters": 7533,
+   "time": 1.0415819000182658,
+   "cuts": 395
   },
-  "obj_rel_diff": 2.39130203737387e-05
+  "obj_rel_diff": 6.05796516139869e-05
  },
  {
   "name": "dsbmip",
@@ -298,15 +336,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": -305.19817500947573,
-   "bound": -305.19817500947573,
+   "obj": -305.198175009481,
+   "bound": -305.198175009481,
    "gap": 0.0,
-   "nodes": 156,
-   "lp_iters": 8660,
-   "time": 6.3323516,
-   "cuts": 25
+   "nodes": 115,
+   "lp_iters": 6750,
+   "time": 0.28704060005577803,
+   "cuts": 23
   },
-  "obj_rel_diff": 1.992884072100856e-14
+  "obj_rel_diff": 2.607511870038503e-15
  },
  {
   "name": "egout",
@@ -325,15 +363,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 568.1006999999996,
-   "bound": 568.1006999999996,
+   "obj": 568.1007,
+   "bound": 568.1007,
    "gap": 0.0,
-   "nodes": 2624,
-   "lp_iters": 4168,
-   "time": 1.041435,
-   "cuts": 121
+   "nodes": 430,
+   "lp_iters": 2232,
+   "time": 0.07116950009321273,
+   "cuts": 123
   },
-  "obj_rel_diff": 8.004696190067431e-16
+  "obj_rel_diff": 2.0011740475168578e-16
  },
  {
   "name": "enigma",
@@ -355,10 +393,10 @@
    "obj": 0.0,
    "bound": 0.0,
    "gap": 0.0,
-   "nodes": 6783,
-   "lp_iters": 54584,
-   "time": 0.1632487,
-   "cuts": 10
+   "nodes": 7408,
+   "lp_iters": 58479,
+   "time": 0.2668158999760032,
+   "cuts": 18
   },
   "obj_rel_diff": 0.0
  },
@@ -378,13 +416,13 @@
    "time": 60.0550756000448
   },
   "samadhan": {
-   "status": "no_solution_found",
-   "obj": Infinity,
-   "bound": 172.18834537826248,
-   "gap": Infinity,
-   "nodes": 32,
-   "lp_iters": 8576,
-   "time": 60.5001461,
+   "status": "time_limit",
+   "obj": 175.99999999999994,
+   "bound": 172.18934049411925,
+   "gap": 0.023378279177182174,
+   "nodes": 99,
+   "lp_iters": 15752,
+   "time": 60.000415399916825,
    "cuts": 120
   }
  },
@@ -404,16 +442,16 @@
    "time": 1.0894832001067698
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 407941.5800000002,
-   "bound": 396147.2669000976,
-   "gap": 0.028911769915443735,
-   "nodes": 3863,
-   "lp_iters": 55199,
-   "time": 60.0306722,
-   "cuts": 276
+   "status": "optimal",
+   "obj": 405935.1799999999,
+   "bound": 405935.1799999999,
+   "gap": 0.0,
+   "nodes": 4034,
+   "lp_iters": 87421,
+   "time": 6.247358999994829,
+   "cuts": 230
   },
-  "obj_rel_diff": 0.004942661042603576
+  "obj_rel_diff": 1.9501246194606055e-14
  },
  {
   "name": "fixnet6",
@@ -431,16 +469,15 @@
    "time": 4.132577499840409
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 7878.0,
-   "bound": 3613.47804040404,
-   "gap": 0.5413203807560244,
-   "nodes": 108692,
-   "lp_iters": 312562,
-   "time": 60.2520489,
-   "cuts": 87
-  },
-  "obj_rel_diff": 0.977906100928948
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 3803.8081782070253,
+   "gap": Infinity,
+   "nodes": 319847,
+   "lp_iters": 982453,
+   "time": 60.03715809979715,
+   "cuts": 144
+  }
  },
  {
   "name": "flugpl",
@@ -462,9 +499,9 @@
    "obj": 1201500.0,
    "bound": 1201500.0,
    "gap": 0.0,
-   "nodes": 3452,
-   "lp_iters": 2881,
-   "time": 0.1077292,
+   "nodes": 3709,
+   "lp_iters": 3137,
+   "time": 0.07497209991548658,
    "cuts": 43
   },
   "obj_rel_diff": 0.0
@@ -486,15 +523,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 112320.98682399977,
-   "bound": 112320.98682399977,
+   "obj": 112313.36271800002,
+   "bound": 112313.36271800002,
    "gap": 0.0,
-   "nodes": 739,
-   "lp_iters": 11634,
-   "time": 10.495172,
-   "cuts": 70
+   "nodes": 442,
+   "lp_iters": 7315,
+   "time": 0.3083050000242084,
+   "cuts": 38
   },
-  "obj_rel_diff": 6.788244795869e-05
+  "obj_rel_diff": 1.2956530617736259e-16
  },
  {
   "name": "gesa2",
@@ -512,16 +549,16 @@
    "time": 0.963974199956283
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 25880562.293527447,
-   "bound": 25732966.26668173,
-   "gap": 0.0057029683193022705,
-   "nodes": 9652,
-   "lp_iters": 30850,
-   "time": 60.0228005,
-   "cuts": 53
+   "status": "optimal",
+   "obj": 25780205.19137654,
+   "bound": 25780205.19137654,
+   "gap": 0.0,
+   "nodes": 81258,
+   "lp_iters": 433090,
+   "time": 20.62618380010138,
+   "cuts": 96
   },
-  "obj_rel_diff": 0.003906380251989604
+  "obj_rel_diff": 1.3530706827605776e-05
  },
  {
   "name": "gesa2_o",
@@ -539,16 +576,16 @@
    "time": 1.1252194999251515
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 25785317.4820741,
-   "bound": 25774613.544657294,
-   "gap": 0.00041511753439716894,
-   "nodes": 3056,
-   "lp_iters": 18936,
-   "time": 60.0627145,
-   "cuts": 292
+   "status": "optimal",
+   "obj": 25782040.72262892,
+   "bound": 25782040.72262892,
+   "gap": 0.0,
+   "nodes": 15579,
+   "lp_iters": 132658,
+   "time": 11.160355500098374,
+   "cuts": 442
   },
-  "obj_rel_diff": 0.00021183633831949324
+  "obj_rel_diff": 8.473091934684908e-05
  },
  {
   "name": "gesa3",
@@ -566,16 +603,16 @@
    "time": 3.3952806999441236
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 28001480.50106513,
-   "bound": 27982605.59160866,
-   "gap": 0.000674068267774444,
-   "nodes": 2236,
-   "lp_iters": 14178,
-   "time": 60.0220071,
-   "cuts": 73
+   "status": "optimal",
+   "obj": 27991430.124332774,
+   "bound": 27991430.124332774,
+   "gap": 0.0,
+   "nodes": 609,
+   "lp_iters": 6719,
+   "time": 0.305618900053218,
+   "cuts": 81
   },
-  "obj_rel_diff": 0.0003728997456190635
+  "obj_rel_diff": 1.3842855219954942e-05
  },
  {
   "name": "gesa3_o",
@@ -594,15 +631,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 27993400.25700655,
-   "bound": 27993400.25700655,
+   "obj": 27991430.124332774,
+   "bound": 27991430.124332774,
    "gap": 0.0,
-   "nodes": 652,
-   "lp_iters": 7726,
-   "time": 38.5981269,
-   "cuts": 174
+   "nodes": 642,
+   "lp_iters": 9331,
+   "time": 0.5462747000433773,
+   "cuts": 240
   },
-  "obj_rel_diff": 8.422725274985035e-05
+  "obj_rel_diff": 1.3842855193736114e-05
  },
  {
   "name": "gt2",
@@ -624,10 +661,10 @@
    "obj": 21166.000000000004,
    "bound": 21166.000000000004,
    "gap": 0.0,
-   "nodes": 1919,
-   "lp_iters": 11233,
-   "time": 0.3910999,
-   "cuts": 116
+   "nodes": 724,
+   "lp_iters": 4504,
+   "time": 0.06887729977489412,
+   "cuts": 108
   },
   "obj_rel_diff": 1.7187842800206525e-16
  },
@@ -649,12 +686,12 @@
   "samadhan": {
    "status": "no_solution_found",
    "obj": Infinity,
-   "bound": -74041242.67764129,
+   "bound": -74044338.25609271,
    "gap": Infinity,
-   "nodes": 52892,
-   "lp_iters": 538304,
-   "time": 60.0457331,
-   "cuts": 77
+   "nodes": 164290,
+   "lp_iters": 1305719,
+   "time": 60.01983309998034,
+   "cuts": 102
   }
  },
  {
@@ -677,10 +714,10 @@
    "obj": 106940226.0,
    "bound": 106940226.0,
    "gap": 0.0,
-   "nodes": 51,
-   "lp_iters": 1189,
-   "time": 0.1143989,
-   "cuts": 86
+   "nodes": 57,
+   "lp_iters": 1197,
+   "time": 0.062877399897331,
+   "cuts": 93
   },
   "obj_rel_diff": 0.0
  },
@@ -700,16 +737,16 @@
    "time": 3.799906399799511
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 4722.0,
-   "bound": 4702.525983372465,
-   "gap": 0.0041241034789358515,
-   "nodes": 1123,
-   "lp_iters": 32982,
-   "time": 60.0182952,
-   "cuts": 472
+   "status": "optimal",
+   "obj": 4721.999999999999,
+   "bound": 4721.999999999999,
+   "gap": 0.0,
+   "nodes": 1940,
+   "lp_iters": 60164,
+   "time": 20.384349899813486,
+   "cuts": 293
   },
-  "obj_rel_diff": 0.0
+  "obj_rel_diff": 1.9260794192565188e-16
  },
  {
   "name": "lseu",
@@ -731,10 +768,10 @@
    "obj": 1120.0,
    "bound": 1120.0,
    "gap": 0.0,
-   "nodes": 7763,
-   "lp_iters": 34322,
-   "time": 1.1615228,
-   "cuts": 76
+   "nodes": 10619,
+   "lp_iters": 43939,
+   "time": 0.7113992999528885,
+   "cuts": 95
   },
   "obj_rel_diff": 2.0301221021717145e-16
  },
@@ -755,12 +792,12 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": 7.999999999999466,
+   "obj": 0.9999999999999514,
    "bound": 0.0,
-   "gap": 1.0,
-   "nodes": 7872954,
-   "lp_iters": 28789098,
-   "time": 84.5365598,
+   "gap": 0.9999999999999514,
+   "nodes": 5285339,
+   "lp_iters": 19849308,
+   "time": 60.018263400124695,
    "cuts": 6
   }
  },
@@ -781,12 +818,12 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": 14.999999999999734,
+   "obj": 14.999999999999643,
    "bound": 0.0,
    "gap": 1.0,
-   "nodes": 6124886,
-   "lp_iters": 24630773,
-   "time": 89.4852948,
+   "nodes": 4734094,
+   "lp_iters": 18988394,
+   "time": 60.11625429988538,
    "cuts": 7
   }
  },
@@ -807,12 +844,12 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": 11857.37125819999,
-   "bound": 11175.234873650783,
-   "gap": 0.057528466444657714,
-   "nodes": 466843,
-   "lp_iters": 2601511,
-   "time": 61.40322,
+   "obj": 11857.371258200003,
+   "bound": 11244.373150819774,
+   "gap": 0.05169763972400775,
+   "nodes": 721689,
+   "lp_iters": 3608041,
+   "time": 60.06177099991215,
    "cuts": 82
   }
  },
@@ -833,12 +870,12 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 40004.9860493135,
-   "bound": 40004.9860493135,
+   "obj": 40004.98604931342,
+   "bound": 40004.98604931342,
    "gap": 0.0,
    "nodes": 536683,
-   "lp_iters": 3605868,
-   "time": 46.733384,
+   "lp_iters": 3116584,
+   "time": 35.183139599925596,
    "cuts": 41
   }
  },
@@ -859,15 +896,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 3360.0000000000095,
-   "bound": 3360.0000000000095,
+   "obj": 3360.0,
+   "bound": 3360.0,
    "gap": 0.0,
-   "nodes": 1378,
-   "lp_iters": 22138,
-   "time": 1.0135662,
-   "cuts": 38
+   "nodes": 1138,
+   "lp_iters": 15576,
+   "time": 0.23852260003084838,
+   "cuts": 23
   },
-  "obj_rel_diff": 4.1955856778215496e-15
+  "obj_rel_diff": 1.3534147347811451e-15
  },
  {
   "name": "misc06",
@@ -886,15 +923,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 12850.860737382542,
-   "bound": 12850.860737382542,
+   "obj": 12850.860737382538,
+   "bound": 12850.860737382538,
    "gap": 0.0,
-   "nodes": 148,
-   "lp_iters": 1692,
-   "time": 3.5066484,
-   "cuts": 2
+   "nodes": 102,
+   "lp_iters": 1168,
+   "time": 0.06559520010430814,
+   "cuts": 13
   },
-  "obj_rel_diff": 1.6773239587630744e-05
+  "obj_rel_diff": 1.6773239587913833e-05
  },
  {
   "name": "misc07",
@@ -912,16 +949,16 @@
    "time": 28.276336200069636
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 2810.000000000004,
-   "bound": 2634.999999999999,
-   "gap": 0.062277580071176064,
-   "nodes": 21025,
-   "lp_iters": 286912,
-   "time": 60.0312777,
-   "cuts": 60
+   "status": "optimal",
+   "obj": 2810.0000000000005,
+   "bound": 2810.0000000000005,
+   "gap": 0.0,
+   "nodes": 24615,
+   "lp_iters": 373089,
+   "time": 12.657258400005597,
+   "cuts": 52
   },
-  "obj_rel_diff": 1.424119817722753e-14
+  "obj_rel_diff": 1.294654379747957e-14
  },
  {
   "name": "mitre",
@@ -929,7 +966,25 @@
   "m": 2054,
   "nnz": 39704,
   "ints": 10724,
-  "skipped": "2054 rows > 1500"
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 115155.0,
+   "bound": 115155.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 3.0207551000639796
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 115075.0,
+   "gap": Infinity,
+   "nodes": 181770,
+   "lp_iters": 421123,
+   "time": 60.0569459000826,
+   "cuts": 180
+  }
  },
  {
   "name": "mkc",
@@ -937,7 +992,25 @@
   "m": 3411,
   "nnz": 17038,
   "ints": 5323,
-  "skipped": "3411 rows > 1500"
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -549.8060000000003,
+   "bound": -570.778,
+   "gap": 0.0381443636482682,
+   "nodes": 1408,
+   "time": 60.04038489982486
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": -611.8499999999999,
+   "gap": Infinity,
+   "nodes": 112973,
+   "lp_iters": 404217,
+   "time": 60.02822899998024,
+   "cuts": 60
+  }
  },
  {
   "name": "mod008",
@@ -959,10 +1032,10 @@
    "obj": 307.0,
    "bound": 307.0,
    "gap": 0.0,
-   "nodes": 19846,
-   "lp_iters": 104673,
-   "time": 2.2124063,
-   "cuts": 57
+   "nodes": 22210,
+   "lp_iters": 114938,
+   "time": 1.3460711000994325,
+   "cuts": 41
   },
   "obj_rel_diff": 7.591466362518391e-15
  },
@@ -983,15 +1056,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 6547.999999999943,
-   "bound": 6547.999999999943,
+   "obj": 6548.0,
+   "bound": 6548.0,
    "gap": 0.0,
    "nodes": 0,
-   "lp_iters": 630,
-   "time": 0.0806587,
-   "cuts": 148
+   "lp_iters": 713,
+   "time": 0.024846100023159384,
+   "cuts": 41
   },
-  "obj_rel_diff": 8.750483538743812e-15
+  "obj_rel_diff": 0.0
  },
  {
   "name": "mod011",
@@ -999,7 +1072,26 @@
   "m": 4497,
   "nnz": 23174,
   "ints": 96,
-  "skipped": "4497 rows > 1500"
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": -54558535.01422733,
+   "bound": -54559143.15042388,
+   "gap": 1.1146490579112355e-05,
+   "nodes": 1121,
+   "time": 58.42760520009324
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": -54180041.67639867,
+   "bound": -57183678.23825202,
+   "gap": 0.05543806296409257,
+   "nodes": 3287,
+   "lp_iters": 314974,
+   "time": 60.000396200024774,
+   "cuts": 11
+  },
+  "obj_rel_diff": 0.006937380883301909
  },
  {
   "name": "modglob",
@@ -1019,12 +1111,12 @@
   "samadhan": {
    "status": "time_limit",
    "obj": 20753032.277578827,
-   "bound": 20701577.834174965,
-   "gap": 0.0024793698923435297,
-   "nodes": 122993,
-   "lp_iters": 481194,
-   "time": 60.2329029,
-   "cuts": 68
+   "bound": 20712833.992023524,
+   "gap": 0.0019369837148440492,
+   "nodes": 145960,
+   "lp_iters": 990011,
+   "time": 60.01369140015278,
+   "cuts": 216
   },
   "obj_rel_diff": 0.0006038517098264287
  },
@@ -1044,14 +1136,14 @@
    "time": 60.00912549998611
   },
   "samadhan": {
-   "status": "no_solution_found",
-   "obj": Infinity,
-   "bound": -43.00000000000001,
-   "gap": Infinity,
-   "nodes": 279316,
-   "lp_iters": 1103826,
-   "time": 60.1947926,
-   "cuts": 16
+   "status": "time_limit",
+   "obj": -41.0,
+   "bound": -43.0,
+   "gap": 0.04878048780487805,
+   "nodes": 922287,
+   "lp_iters": 2791279,
+   "time": 60.03452559996522,
+   "cuts": 34
   }
  },
  {
@@ -1071,13 +1163,13 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 16861.999999996966,
-   "bound": 16861.999999996966,
+   "obj": 16862.0,
+   "bound": 16862.0,
    "gap": 0.0,
-   "nodes": 16,
-   "lp_iters": 1060,
-   "time": 10.6008244,
-   "cuts": 129
+   "nodes": 0,
+   "lp_iters": 233,
+   "time": 0.6746945999591917,
+   "cuts": 32
   }
  },
  {
@@ -1100,10 +1192,10 @@
    "obj": 3089.0,
    "bound": 3089.0,
    "gap": 0.0,
-   "nodes": 668,
-   "lp_iters": 1354,
-   "time": 0.0081522,
-   "cuts": 25
+   "nodes": 604,
+   "lp_iters": 1194,
+   "time": 0.008379099886259437,
+   "cuts": 21
   },
   "obj_rel_diff": 2.9443013977757476e-16
  },
@@ -1124,15 +1216,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 7614.999999999986,
-   "bound": 7614.999999999986,
+   "obj": 7615.0,
+   "bound": 7615.0,
    "gap": 0.0,
-   "nodes": 676,
-   "lp_iters": 16054,
-   "time": 8.6459497,
-   "cuts": 315
+   "nodes": 467,
+   "lp_iters": 7328,
+   "time": 0.6968424000584363,
+   "cuts": 427
   },
-  "obj_rel_diff": 3.8231024824376385e-13
+  "obj_rel_diff": 3.8410176768258184e-13
  },
  {
   "name": "p0282",
@@ -1151,15 +1243,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 258411.0,
-   "bound": 258411.0,
+   "obj": 258418.0,
+   "bound": 258418.0,
    "gap": 0.0,
-   "nodes": 2010,
-   "lp_iters": 24546,
-   "time": 6.3128112,
+   "nodes": 1949,
+   "lp_iters": 28822,
+   "time": 0.800477500005576,
    "cuts": 204
   },
-  "obj_rel_diff": 0.0
+  "obj_rel_diff": 2.708863012797443e-05
  },
  {
   "name": "p0548",
@@ -1177,15 +1269,16 @@
    "time": 0.11838550004176795
   },
   "samadhan": {
-   "status": "no_solution_found",
-   "obj": Infinity,
-   "bound": 7753.42466602933,
-   "gap": Infinity,
-   "nodes": 5588,
-   "lp_iters": 68672,
-   "time": 60.0080964,
-   "cuts": 383
-  }
+   "status": "optimal",
+   "obj": 8691.0,
+   "bound": 8691.0,
+   "gap": 0.0,
+   "nodes": 13999,
+   "lp_iters": 132947,
+   "time": 6.899441599971631,
+   "cuts": 262
+  },
+  "obj_rel_diff": 0.0
  },
  {
   "name": "p2756",
@@ -1205,12 +1298,12 @@
   "samadhan": {
    "status": "no_solution_found",
    "obj": Infinity,
-   "bound": 2723.80281690141,
+   "bound": 2822.8101590880347,
    "gap": Infinity,
-   "nodes": 40727,
-   "lp_iters": 252032,
-   "time": 60.0941722,
-   "cuts": 61
+   "nodes": 155408,
+   "lp_iters": 935796,
+   "time": 60.02349749995326,
+   "cuts": 64
   }
  },
  {
@@ -1230,12 +1323,12 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 11.000000000000004,
-   "bound": 11.000000000000004,
+   "obj": 10.999999999999979,
+   "bound": 10.999999999999979,
    "gap": 0.0,
-   "nodes": 349629,
-   "lp_iters": 3334987,
-   "time": 35.1484414,
+   "nodes": 325651,
+   "lp_iters": 3103938,
+   "time": 27.26944409991542,
    "cuts": 15
   }
  },
@@ -1256,15 +1349,15 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": 7390.0,
-   "bound": 7007.902254144592,
-   "gap": 0.051704701739568065,
-   "nodes": 9520,
-   "lp_iters": 106278,
-   "time": 60.0258986,
-   "cuts": 317
+   "obj": 7370.0,
+   "bound": 7252.699422121351,
+   "gap": 0.01591595357919256,
+   "nodes": 57405,
+   "lp_iters": 548654,
+   "time": 60.00301010005332,
+   "cuts": 329
   },
-  "obj_rel_diff": 0.005442176870748299
+  "obj_rel_diff": 0.0027210884353741495
  },
  {
   "name": "pp08aCUTS",
@@ -1283,15 +1376,15 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": 7350.000000000003,
-   "bound": 7124.50363038425,
-   "gap": 0.030679778179013985,
-   "nodes": 11499,
-   "lp_iters": 118649,
-   "time": 60.0151867,
-   "cuts": 237
+   "obj": 7370.000000000001,
+   "bound": 7254.799022849959,
+   "gap": 0.015631068812760048,
+   "nodes": 40024,
+   "lp_iters": 416417,
+   "time": 60.00415920000088,
+   "cuts": 331
   },
-  "obj_rel_diff": 1.2374077575141892e-15
+  "obj_rel_diff": 0.0027210884353751417
  },
  {
   "name": "qiu",
@@ -1309,14 +1402,14 @@
    "time": 60.009477300103754
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 60.472823053000596,
-   "bound": -754.0200183923314,
-   "gap": 13.46874183021819,
-   "nodes": 388,
-   "lp_iters": 15872,
-   "time": 60.3471704,
-   "cuts": 0
+   "status": "optimal",
+   "obj": -132.87313694699463,
+   "bound": -132.87313694699463,
+   "gap": 0.0,
+   "nodes": 13558,
+   "lp_iters": 852515,
+   "time": 58.84808390005073,
+   "cuts": 3
   }
  },
  {
@@ -1335,16 +1428,16 @@
    "time": 0.8788079998921603
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 16351.460681,
-   "bound": 15306.590725962058,
-   "gap": 0.06390071048833307,
-   "nodes": 885,
-   "lp_iters": 19520,
-   "time": 60.1905342,
-   "cuts": 377
+   "status": "optimal",
+   "obj": 16029.692681000002,
+   "bound": 16029.692681000002,
+   "gap": 0.0,
+   "nodes": 1411,
+   "lp_iters": 65626,
+   "time": 32.908694599963226,
+   "cuts": 439
   },
-  "obj_rel_diff": 0.02007324821525691
+  "obj_rel_diff": 1.1347624934206662e-16
  },
  {
   "name": "qnet1_o",
@@ -1362,16 +1455,16 @@
    "time": 1.4288881998509169
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 16029.692681000011,
-   "bound": 14857.856999999996,
-   "gap": 0.07310406408408512,
-   "nodes": 1260,
-   "lp_iters": 41127,
-   "time": 60.0129502,
-   "cuts": 259
+   "status": "optimal",
+   "obj": 16029.692681000004,
+   "bound": 16029.692681000004,
+   "gap": 0.0,
+   "nodes": 1900,
+   "lp_iters": 87635,
+   "time": 33.17652400001339,
+   "cuts": 350
   },
-  "obj_rel_diff": 2.1787439873677253e-14
+  "obj_rel_diff": 2.1333534876308977e-14
  },
  {
   "name": "rentacar",
@@ -1379,7 +1472,26 @@
   "m": 6805,
   "nnz": 41873,
   "ints": 55,
-  "skipped": "6805 rows > 1500"
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 30356760.984145913,
+   "bound": 30354064.39495395,
+   "gap": 8.882993786360644e-05,
+   "nodes": 1,
+   "time": 10.389440499944612
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 30356760.98414877,
+   "bound": 30356760.98414877,
+   "gap": 0.0,
+   "nodes": 261,
+   "lp_iters": 28020,
+   "time": 4.3138369001093775,
+   "cuts": 7
+  },
+  "obj_rel_diff": 9.412393042895904e-14
  },
  {
   "name": "rgn",
@@ -1398,15 +1510,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 82.19999924000113,
-   "bound": 82.19999924000113,
+   "obj": 82.19999924000561,
+   "bound": 82.19999924000561,
    "gap": 0.0,
-   "nodes": 3598,
-   "lp_iters": 27311,
-   "time": 2.7874531,
-   "cuts": 144
+   "nodes": 3658,
+   "lp_iters": 27186,
+   "time": 0.7887928000706702,
+   "cuts": 129
   },
-  "obj_rel_diff": 1.4867804340716606e-14
+  "obj_rel_diff": 6.932545977473673e-14
  },
  {
   "name": "rout",
@@ -1425,15 +1537,15 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": 1191.0900000000008,
-   "bound": 1010.0533094277363,
-   "gap": 0.15199245277205284,
-   "nodes": 8832,
-   "lp_iters": 146607,
-   "time": 60.007542,
-   "cuts": 191
+   "obj": 1079.7300000000002,
+   "bound": 1046.1274874741387,
+   "gap": 0.031121217828403006,
+   "nodes": 120301,
+   "lp_iters": 1408945,
+   "time": 60.00915209994017,
+   "cuts": 77
   },
-  "obj_rel_diff": 0.10535840231634516
+  "obj_rel_diff": 0.002013808975834571
  },
  {
   "name": "set1ch",
@@ -1453,11 +1565,11 @@
   "samadhan": {
    "status": "no_solution_found",
    "obj": Infinity,
-   "bound": 50703.881653730146,
+   "bound": 49779.479072431015,
    "gap": Infinity,
-   "nodes": 2420,
-   "lp_iters": 27597,
-   "time": 60.0069083,
+   "nodes": 29658,
+   "lp_iters": 319163,
+   "time": 60.00343340000022,
    "cuts": 480
   }
  },
@@ -1467,7 +1579,25 @@
   "m": 4944,
   "nnz": 33549,
   "ints": 1372,
-  "skipped": "4944 rows > 1500"
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 430.0,
+   "bound": 409.0,
+   "gap": 0.04883720930232558,
+   "nodes": 72,
+   "time": 60.00709870015271
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 428.0,
+   "bound": 407.9474953663977,
+   "gap": 0.06447750686045764,
+   "nodes": 1285,
+   "lp_iters": 150075,
+   "time": 59.99936569998963,
+   "cuts": 420
+  }
  },
  {
   "name": "stein27",
@@ -1486,15 +1616,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "obj": 18.000000000000007,
-   "bound": 18.000000000000007,
+   "obj": 18.0,
+   "bound": 18.0,
    "gap": 0.0,
-   "nodes": 9736,
-   "lp_iters": 27357,
-   "time": 2.554624,
+   "nodes": 9411,
+   "lp_iters": 26935,
+   "time": 0.5876356999511927,
    "cuts": 21
   },
-  "obj_rel_diff": 1.381610875089085e-15
+  "obj_rel_diff": 9.86864910777918e-16
  },
  {
   "name": "stein45",
@@ -1512,16 +1642,16 @@
    "time": 29.863499799976125
   },
   "samadhan": {
-   "status": "time_limit",
-   "obj": 30.000000000000007,
-   "bound": 27.499999999999986,
-   "gap": 0.08333333333333402,
-   "nodes": 34667,
-   "lp_iters": 168667,
-   "time": 60.0188943,
+   "status": "optimal",
+   "obj": 30.0,
+   "bound": 30.0,
+   "gap": 0.0,
+   "nodes": 112184,
+   "lp_iters": 614706,
+   "time": 28.389609000205994,
    "cuts": 35
   },
-  "obj_rel_diff": 3.552713678800501e-16
+  "obj_rel_diff": 1.1842378929335005e-16
  },
  {
   "name": "swath",
@@ -1539,14 +1669,14 @@
    "time": 60.03182870009914
   },
   "samadhan": {
-   "status": "no_solution_found",
-   "obj": Infinity,
-   "bound": 336.6314244928571,
-   "gap": Infinity,
-   "nodes": 16656,
-   "lp_iters": 123244,
-   "time": 60.0446038,
-   "cuts": 8
+   "status": "time_limit",
+   "obj": 769.5286810000002,
+   "bound": 379.74283084111863,
+   "gap": 0.5065254353513583,
+   "nodes": 13563,
+   "lp_iters": 137833,
+   "time": 60.00189359987681,
+   "cuts": 431
   }
  },
  {
@@ -1565,14 +1695,14 @@
    "time": 0.03584469994530082
   },
   "samadhan": {
-   "status": "time_limit",
+   "status": "optimal",
    "obj": 20.0,
-   "bound": 19.5,
-   "gap": 0.025,
-   "nodes": 43493,
-   "lp_iters": 194940,
-   "time": 60.0229185,
-   "cuts": 149
+   "bound": 20.0,
+   "gap": 0.0,
+   "nodes": 38356,
+   "lp_iters": 215541,
+   "time": 13.649041699925665,
+   "cuts": 171
   },
   "obj_rel_diff": 0.0
  },
@@ -1593,14 +1723,14 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": 15.25,
-   "bound": 12.675909884708771,
-   "gap": 0.1687927944453265,
-   "nodes": 35077,
-   "lp_iters": 298467,
-   "time": 60.0306587,
-   "cuts": 194
+   "obj": 14.0,
+   "bound": 13.012134831641676,
+   "gap": 0.07056179773988028,
+   "nodes": 149148,
+   "lp_iters": 1197679,
+   "time": 60.010895700174295,
+   "cuts": 242
   },
-  "obj_rel_diff": 0.10909090909090909
+  "obj_rel_diff": 0.01818181818181818
  }
 ]

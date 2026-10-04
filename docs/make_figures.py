@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -40,14 +41,19 @@ def miplib():
     fig, ax = plt.subplots(figsize=(5.6, 5.0))
     lim = 60.0
     t = lambda d, ok: max(d["time"], 0.01) if ok else lim * 1.6
-    for r in R:
+    placed = []                                   # label positions (log10), to nudge labels that would collide
+    for r in sorted(R, key=lambda r: -r["samadhan"]["time"]):
         s_ok = r["samadhan"]["status"] == "optimal"
         h_ok = r["highs"]["status"] == "Optimal"
         x, y = t(r["highs"], h_ok), t(r["samadhan"], s_ok)
         col = TEAL if (s_ok and (not h_ok or y <= x)) else (AMBER if s_ok else GREY)
         ax.scatter(x, y, s=28, color=col, zorder=3, edgecolor="white", linewidth=0.5)
-        if s_ok and (not h_ok or y < x):
-            ax.annotate(r["name"], (x, y), textcoords="offset points", xytext=(5, 3), fontsize=8, color=INK)
+        if s_ok and (not h_ok or y <= x / 2):     # label: at least 2x faster, or HiGHS did not finish
+            lx, ly, dy = np.log10(x), np.log10(y), 3
+            while any(abs(lx - px) < 0.5 and abs(ly + dy / 60 - py) < 0.12 for px, py in placed):
+                dy -= 9
+            placed.append((lx, ly + dy / 60))
+            ax.annotate(r["name"], (x, y), textcoords="offset points", xytext=(5, dy), fontsize=8, color=INK)
     ax.plot([0.01, lim * 2], [0.01, lim * 2], color=MUTED, lw=0.8, ls="--")
     ax.axhline(lim * 1.6, color=GRID, lw=0.8); ax.axvline(lim * 1.6, color=GRID, lw=0.8)
     ax.set_xscale("log"); ax.set_yscale("log"); ax.set_xlim(0.008, lim * 2.2); ax.set_ylim(0.008, lim * 2.2)

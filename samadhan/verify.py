@@ -1,6 +1,6 @@
 """Evaluator self-check:  python -m samadhan verify
 
-Solves small LP, QP and MILP models with both engines and checks every answer two ways:
+Solves small LP, QP and MILP models with every engine and checks every answer two ways:
   1. the objective is compared with an independent reference: an optimum worked out by hand, or HiGHS
      (skipped if highspy is not installed);
   2. feasibility is recomputed here from the returned solution vector (constraints, bounds, integrality),
@@ -45,6 +45,8 @@ CHECKS = [   # (problem class, description, model, engine, reference: number wor
     ("LP", "textbook (2 vars)", _wyndor, "core", -36.0),
     ("LP", "refinery planning", lambda: refinery_lp(**SMALL), "gpu", "highs"),
     ("LP", "refinery planning", lambda: refinery_lp(**SMALL), "core", "highs"),
+    ("LP", "textbook (2 vars)", _wyndor, "ipm", -36.0),
+    ("LP", "refinery planning", lambda: refinery_lp(**SMALL), "ipm", "highs"),
     ("QP", "HS21, Maros-Meszaros", _hs21, "gpu", -99.96),
     ("QP", "refinery, convex costs", lambda: refinery_lp(**SMALL, quad=0.3), "gpu", "highs"),
     ("MILP", "textbook knapsack", _knapsack, "core", -20.0),
@@ -68,6 +70,10 @@ def _solve(lp, engine, device):
     if engine == "gpu":
         from .pdlp import PDLP
         r = PDLP(lp, device=device).solve(tol=1e-6, max_iter=2_000_000, time_limit=120)
+        return r.status, r.primal_obj, r.x
+    if engine == "ipm":
+        from .ipm import solve_ipm
+        r = solve_ipm(lp, time_limit=120, crossover=True)
         return r.status, r.primal_obj, r.x
     from .core import solve_core
     r = solve_core(lp, time_limit=120)
@@ -119,7 +125,7 @@ def run(device="cuda"):
         ok = status == "optimal" and err <= (GPU_TOL if engine == "gpu" else CORE_TOL) and feas <= FEAS_TOL
         passed += ok
         run_count += 1
-        name = "GPU engine" if engine == "gpu" else "C++ core"
+        name = {"gpu": "GPU engine", "core": "C++ core", "ipm": "IPM+xover"}[engine]
         print(f"{cls:5}{desc:25}{n:>6,}  {name:12}{obj:>15.8g}{ref_obj:>15.8g}  {ref_src:9}{err:>9.1e}{feas:>9.1e}"
               f"{dt:>7.2f}s  {'PASS' if ok else 'FAIL (' + status + ')'}")
     print(f"\n{passed}/{run_count} checks passed in {time.perf_counter() - t_all:.1f} s.  "

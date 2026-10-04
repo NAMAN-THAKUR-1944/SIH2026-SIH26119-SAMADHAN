@@ -2,11 +2,13 @@
 //
 // Written from scratch (no solver library). Model:   min c'x   s.t.  rlo <= A x <= rhi,  lb <= x <= ub,
 // some x integer. Every row i gets a logical variable r_i = a_i x, so the simplex works on [A  -I] with all
-// bounds on columns. The basis inverse is kept dense (models up to a few thousand rows), updated by a pivot
-// per iteration and refactorised every `refactor` iterations.
+// bounds on columns.
 //
-//   LP   : bounded dual simplex, dual steepest-edge pricing (exact weights), Harris two-pass ratio test,
-//          artificial boxes for dual feasibility on unbounded columns.
+//   LU   : sparse LU factorisation of the basis (Markowitz pivot order, threshold partial pivoting),
+//          product-form eta updates between refactorisations, repair of singular bases with logicals.
+//   LP   : bounded dual simplex, dual steepest-edge pricing (Forrest-Goldfarb weight updates), Harris
+//          two-pass ratio test, row-wise pricing for sparse pivot rows, artificial boxes for dual
+//          feasibility on unbounded columns.
 //   MILP : best-first branch-and-bound with plunging; children are warm-started from the parent basis
 //          (a bound change on a basic variable keeps the basis dual feasible, so no refactorisation);
 //          pseudocost branching; rounding heuristic; Gomory mixed-integer cuts at the root.
@@ -18,6 +20,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <queue>
 #include <utility>
@@ -42,6 +45,7 @@ static double seconds_since(Clock::time_point t0) {
 
 struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
+    double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
@@ -87,22 +91,241 @@ struct Model {
     }
 };
 
+// ---------------------------------------------------------------------------------------------- sparse LU
+// Factorisation of the basis matrix B (m x m, columns = basis positions) by right-looking Gaussian
+// elimination. Step t pivots on row prow[t] and basis column pcol[t], chosen by Markowitz cost
+// (r_i - 1)(c_j - 1) among entries with |a_ij| >= u * max_k |a_ik| (threshold pivoting relative to the row,
+// which bounds the entries of U by 1/u times their pivot; the row maxima are cached, so the search stays
+// cheap on dense kernels). The result is  E B = U  with E the product of the elimination steps (L) and U
+// upper triangular in pivot order. Each later basis change is appended as a product-form eta vector.
+struct Factor {
+    int m = 0, rank = 0;
+    double u = 0.1, abs_tol = 1e-9;     // the model is scaled: entries are O(1)
+    bool symmetric = false;             // SPD matrix: diagonal pivots only (minimum-degree order, LDL')
+    std::vector<int> prow, pcol;
+    std::vector<int> lstart, lidx;           // L step t: x[lidx] -= lval * x[prow[t]]
+    std::vector<double> lval;
+    std::vector<int> ustart, uidx;           // U row t: diagonal udiag[t] at column pcol[t], others (column, value)
+    std::vector<double> uval, udiag;
+    std::vector<int> ucstart, ucrow;         // U by columns (for FTRAN): column c holds (pivot row, value)
+    std::vector<double> ucval;
+    std::vector<int> epos, estart, eidx;     // eta file: pivot position, pivot value, other (position, value)
+    std::vector<double> epiv, eval;
+    std::vector<int> bad_rows, bad_cols;     // unpivoted rows / columns when B is singular
+    std::vector<double> work;
+
+    struct Buckets {                         // objects linked into doubly linked lists by their count
+        std::vector<int> head, next, prev;
+        void init(int n) { head.assign(n + 2, -1); next.assign(n, -1); prev.assign(n, -1); }
+        void add(int o, int k) {
+            prev[o] = -1; next[o] = head[k];
+            if (head[k] >= 0) prev[head[k]] = o;
+            head[k] = o;
+        }
+        void remove(int o, int k) {
+            if (prev[o] >= 0) next[prev[o]] = next[o]; else head[k] = next[o];
+            if (next[o] >= 0) prev[next[o]] = prev[o];
+        }
+    };
+
+    // B given column-wise (bs, bi, bv). Returns false if B is singular; bad_cols / bad_rows then pair up the
+    // basis columns and rows that could not be pivoted.
+    bool factor(int m_, const std::vector<int>& bs, const std::vector<int>& bi, const std::vector<double>& bv) {
+        m = m_; rank = 0;
+        prow.clear(); pcol.clear(); lstart.assign(1, 0); lidx.clear(); lval.clear();
+        ustart.assign(1, 0); uidx.clear(); uval.clear(); udiag.clear();
+        epos.clear(); estart.assign(1, 0); eidx.clear(); epiv.clear(); eval.clear();
+        bad_rows.clear(); bad_cols.clear();
+        // active submatrix: values stored by rows, patterns by columns (rows already pivoted are skipped)
+        std::vector<std::vector<std::pair<int, double>>> R(m);
+        std::vector<std::vector<int>> C(m);
+        for (int c = 0; c < m; ++c)
+            for (int t = bs[c]; t < bs[c + 1]; ++t)
+                if (bv[t] != 0.0) { R[bi[t]].push_back({c, bv[t]}); C[c].push_back(bi[t]); }
+        std::vector<int> rcnt(m), ccnt(m), rstep(m, -1), cstep(m, -1), mark(m, -1);
+        Buckets RB, CB;
+        RB.init(m); CB.init(m);
+        for (int i = 0; i < m; ++i) { rcnt[i] = (int)R[i].size(); RB.add(i, rcnt[i]); }
+        for (int c = 0; c < m; ++c) { ccnt[c] = (int)C[c].size(); CB.add(c, ccnt[c]); }
+        auto value = [&](int i, int c) {
+            for (auto& e : R[i]) if (e.first == c) return e.second;
+            return 0.0;
+        };
+        std::vector<double> rmax(m, -1.0);      // cached largest |entry| of each active row (-1: recompute)
+        auto rowmax = [&](int i) {
+            if (rmax[i] < 0.0) {
+                double mx = 0.0;
+                for (auto& e : R[i]) mx = std::max(mx, std::fabs(e.second));
+                rmax[i] = mx;
+            }
+            return rmax[i];
+        };
+        for (int t = 0; t < m; ++t) {
+            // Markowitz search over columns and rows of increasing count (singletons first)
+            int P = -1, Q = -1, seen = 0;
+            long best = std::numeric_limits<long>::max();
+            double bestv = 0.0;
+            auto consider = [&](int i, int c, double v) {
+                double a = std::fabs(v);
+                if (symmetric ? (i != c || a < abs_tol) : (a < abs_tol || a < u * rowmax(i))) return;
+                long cost = (long)(rcnt[i] - 1) * (long)(ccnt[c] - 1);
+                if (cost < best || (cost == best && a > bestv)) { best = cost; P = i; Q = c; bestv = a; }
+            };
+            auto done = [&]() { return P >= 0 && (best == 0 || seen >= 4); };
+            for (int k = 1; k <= m && !done(); ++k) {
+                for (int c = CB.head[k]; c >= 0 && !done(); c = CB.next[c]) {
+                    for (int i : C[c]) if (rstep[i] < 0) consider(i, c, value(i, c));
+                    if (P >= 0) ++seen;
+                }
+                for (int i = RB.head[k]; i >= 0 && !done(); i = RB.next[i]) {
+                    for (auto& e : R[i]) consider(i, e.first, e.second);
+                    if (P >= 0) ++seen;
+                }
+                if (P >= 0 && best <= (long)k * k) break;     // any later candidate costs at least k*k
+            }
+            if (P < 0) break;                                   // what is left is (numerically) singular
+            double piv = value(P, Q);
+            prow.push_back(P); pcol.push_back(Q); rstep[P] = t; cstep[Q] = t;
+            RB.remove(P, rcnt[P]); CB.remove(Q, ccnt[Q]);
+            std::vector<std::pair<int, double>>& Rp = R[P];
+            for (auto& e : Rp) if (e.first != Q) { CB.remove(e.first, ccnt[e.first]); ccnt[e.first]--; }
+            // eliminate column Q from the other active rows:  row_i -= (a_iQ / piv) * row_P
+            for (int i : C[Q]) {
+                if (rstep[i] >= 0) continue;
+                RB.remove(i, rcnt[i]);
+                std::vector<std::pair<int, double>>& Ri = R[i];
+                double a = 0.0;
+                for (size_t s = 0; s < Ri.size(); ++s)
+                    if (Ri[s].first == Q) { a = Ri[s].second; Ri[s] = Ri.back(); Ri.pop_back(); break; }
+                if (a != 0.0) {
+                    double l = a / piv;
+                    lidx.push_back(i); lval.push_back(l);
+                    for (size_t s = 0; s < Ri.size(); ++s) mark[Ri[s].first] = (int)s;
+                    for (auto& e : Rp) {
+                        int c = e.first;
+                        if (c == Q) continue;
+                        if (mark[c] >= 0) {
+                            Ri[mark[c]].second -= l * e.second;
+                        } else {
+                            Ri.push_back({c, -l * e.second}); C[c].push_back(i); ccnt[c]++;
+                        }
+                    }
+                    for (auto& e : Ri) mark[e.first] = -1;
+                }
+                rmax[i] = -1.0;
+                rcnt[i] = (int)Ri.size();
+                RB.add(i, rcnt[i]);
+            }
+            lstart.push_back((int)lidx.size());
+            for (auto& e : Rp) if (e.first != Q) CB.add(e.first, ccnt[e.first]);
+            udiag.push_back(piv);
+            for (auto& e : Rp) if (e.first != Q) { uidx.push_back(e.first); uval.push_back(e.second); }
+            ustart.push_back((int)uidx.size());
+            std::vector<std::pair<int, double>>().swap(Rp);
+            std::vector<int>().swap(C[Q]);
+            ++rank;
+        }
+        if (rank < m) {
+            for (int c = 0; c < m; ++c) if (cstep[c] < 0) bad_cols.push_back(c);
+            for (int i = 0; i < m; ++i) if (rstep[i] < 0) bad_rows.push_back(i);
+            return false;
+        }
+        // column-wise copy of U for the scatter form of the back substitution
+        ucstart.assign(m + 1, 0);
+        for (int c : uidx) ucstart[c + 1]++;
+        for (int c = 0; c < m; ++c) ucstart[c + 1] += ucstart[c];
+        ucrow.resize(uidx.size()); ucval.resize(uidx.size());
+        std::vector<int> pos(ucstart.begin(), ucstart.end() - 1);
+        for (int s = 0; s < m; ++s)
+            for (int k = ustart[s]; k < ustart[s + 1]; ++k) {
+                int c = uidx[k];
+                ucrow[pos[c]] = prow[s]; ucval[pos[c]++] = uval[k];
+            }
+        return true;
+    }
+
+    // B x = b: on entry b is indexed by row, on exit it holds x indexed by basis position
+    void ftran(std::vector<double>& b) {
+        for (int t = 0; t < m; ++t) {
+            double v = b[prow[t]];
+            if (v == 0.0) continue;
+            for (int k = lstart[t]; k < lstart[t + 1]; ++k) b[lidx[k]] -= lval[k] * v;
+        }
+        work.assign(m, 0.0);
+        for (int t = m - 1; t >= 0; --t) {
+            double v = b[prow[t]];
+            if (v == 0.0) continue;
+            int c = pcol[t];
+            double xc = v / udiag[t];
+            work[c] = xc;
+            for (int k = ucstart[c]; k < ucstart[c + 1]; ++k) b[ucrow[k]] -= ucval[k] * xc;
+        }
+        for (size_t e = 0; e < epos.size(); ++e) {
+            int r = epos[e];
+            double xr = work[r] / epiv[e];
+            work[r] = xr;
+            if (xr != 0.0)
+                for (int k = estart[e]; k < estart[e + 1]; ++k) work[eidx[k]] -= eval[k] * xr;
+        }
+        b.swap(work);
+    }
+
+    // B' y = d: on entry d is indexed by basis position, on exit it holds y indexed by row
+    void btran(std::vector<double>& d) {
+        for (int e = (int)epos.size() - 1; e >= 0; --e) {
+            int r = epos[e];
+            double s = d[r];
+            for (int k = estart[e]; k < estart[e + 1]; ++k) s -= eval[k] * d[eidx[k]];
+            d[r] = s / epiv[e];
+        }
+        work.assign(m, 0.0);
+        for (int t = 0; t < m; ++t) {
+            double v = d[pcol[t]];
+            if (v == 0.0) continue;
+            double wt = v / udiag[t];
+            work[prow[t]] = wt;
+            for (int k = ustart[t]; k < ustart[t + 1]; ++k) d[uidx[k]] -= uval[k] * wt;
+        }
+        for (int t = m - 1; t >= 0; --t) {
+            double s = 0.0;
+            for (int k = lstart[t]; k < lstart[t + 1]; ++k) s += lval[k] * work[lidx[k]];
+            work[prow[t]] -= s;
+        }
+        d.swap(work);
+    }
+
+    // basis position r now holds a column with B^-1 a = alpha (alpha indexed by basis position)
+    void add_eta(int r, const std::vector<double>& alpha) {
+        epos.push_back(r); epiv.push_back(alpha[r]);
+        for (int k = 0; k < m; ++k)
+            if (k != r && std::fabs(alpha[k]) > 1e-14) { eidx.push_back(k); eval.push_back(alpha[k]); }
+        estart.push_back((int)eidx.size());
+    }
+
+    long nnz() const { return (long)lidx.size() + (long)uidx.size() + m; }
+};
+
 // ---------------------------------------------------------------------------------------------- simplex
 struct Simplex {
     const Model* M = nullptr;
     Options opt;
     int n = 0, m = 0, N = 0;
-    std::vector<double> c, lb, ub, x, d, Binv, w;   // w: dual steepest-edge weights ||row_k(Binv)||^2
+    std::vector<double> c, lb, ub, x, d, w;          // w: dual steepest-edge weights ||row_k(B^-1)||^2
     std::vector<char> art;                           // column has an artificial (box) bound
     std::vector<int> head;
     std::vector<int8_t> st;
-    std::vector<double> ar, acol;                    // work: pivot row / entering column
+    std::vector<double> ar, acol, rho, tau;          // work: pivot row, entering column, row of B^-1, B^-1 rho
+    std::vector<int> rp, rc;                         // row-wise copy of A (pricing with sparse pivot rows)
+    std::vector<double> rv;
+    std::vector<int> bstart, bidx;                   // basis columns handed to the factorisation
+    std::vector<double> bval;
+    Factor F;
     long iters = 0;
     int since_refactor = 0;
     double big = 1e7;
     Clock::time_point t_end;
 
-    template <class F> void col(int j, F f) const {
+    template <class Fn> void col(int j, Fn f) const {
         if (j < n) {
             for (int t = M->cp[j]; t < M->cp[j + 1]; ++t) f(M->ri[t], M->cv[t]);
         } else {
@@ -110,17 +333,29 @@ struct Simplex {
         }
     }
 
+    void build_rows() {
+        rp.assign(m + 1, 0);
+        for (int t = 0; t < M->cp[n]; ++t) rp[M->ri[t] + 1]++;
+        for (int i = 0; i < m; ++i) rp[i + 1] += rp[i];
+        rc.resize(M->cp[n]); rv.resize(M->cp[n]);
+        std::vector<int> pos(rp.begin(), rp.end() - 1);
+        for (int j = 0; j < n; ++j)
+            for (int t = M->cp[j]; t < M->cp[j + 1]; ++t) { rc[pos[M->ri[t]]] = j; rv[pos[M->ri[t]]++] = M->cv[t]; }
+    }
+
     // (re)size for the current model; keeps existing basis info for old columns, new rows get basic logicals
+    // (their dual steepest-edge weights are marked unknown and computed at the next refactorisation)
     void resize_to_model() {
         int old_m = m;
         n = M->n; m = M->m; N = n + m;
         c.resize(N, 0.0); lb.resize(N); ub.resize(N); x.resize(N, 0.0); d.resize(N, 0.0);
-        art.resize(N, 0); st.resize(N, BASIC); ar.resize(N); acol.resize(m); w.resize(m, 1.0);
+        art.resize(N, 0); st.resize(N, BASIC); ar.resize(N); acol.resize(m); w.resize(m, -1.0);
         for (int j = 0; j < n; ++j) c[j] = M->c[j];
         for (int i = old_m; i < m; ++i) {
             lb[n + i] = M->rlo[i]; ub[n + i] = M->rhi[i]; c[n + i] = 0.0;
             head.push_back(n + i); st[n + i] = BASIC;
         }
+        build_rows();
     }
 
     void init_slack_basis(const std::vector<double>& slb, const std::vector<double>& sub) {
@@ -131,42 +366,27 @@ struct Simplex {
         for (int j = 0; j < n; ++j) { c[j] = M->c[j]; lb[j] = slb[j]; ub[j] = sub[j]; }
         for (int i = 0; i < m; ++i) { lb[n + i] = M->rlo[i]; ub[n + i] = M->rhi[i]; head[i] = n + i; st[n + i] = BASIC; }
         for (int j = 0; j < n; ++j) st[j] = AT_LB;
+        build_rows();
         refactor_full();
     }
 
-    // Gauss-Jordan inversion of the dense basis. Returns false if singular.
-    bool reinvert() {
-        std::vector<double> B((size_t)m * m, 0.0);
-        for (int k = 0; k < m; ++k) col(head[k], [&](int i, double v) { B[(size_t)i * m + k] = v; });
-        Binv.assign((size_t)m * m, 0.0);
-        for (int i = 0; i < m; ++i) Binv[(size_t)i * m + i] = 1.0;
-        for (int k = 0; k < m; ++k) {
-            int p = -1; double best = 0.0;
-            for (int i = k; i < m; ++i) {
-                double v = std::fabs(B[(size_t)i * m + k]);
-                if (v > best) { best = v; p = i; }
+    // factorise the basis; a singular basis is repaired by swapping in the logicals of the unpivoted rows
+    bool reinvert(bool& repaired) {
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            bstart.assign(1, 0); bidx.clear(); bval.clear();
+            for (int k = 0; k < m; ++k) {
+                col(head[k], [&](int i, double v) { bidx.push_back(i); bval.push_back(v); });
+                bstart.push_back((int)bidx.size());
             }
-            if (best < 1e-11) return false;
-            if (p != k) {
-                for (int t = 0; t < m; ++t) {
-                    std::swap(B[(size_t)p * m + t], B[(size_t)k * m + t]);
-                    std::swap(Binv[(size_t)p * m + t], Binv[(size_t)k * m + t]);
-                }
-            }
-            double piv = B[(size_t)k * m + k];
-            double* Bk = &B[(size_t)k * m];
-            double* Ik = &Binv[(size_t)k * m];
-            for (int t = 0; t < m; ++t) { Bk[t] /= piv; Ik[t] /= piv; }
-            for (int i = 0; i < m; ++i) {
-                if (i == k) continue;
-                double f = B[(size_t)i * m + k];
-                if (f == 0.0) continue;
-                double* Bi = &B[(size_t)i * m];
-                double* Ii = &Binv[(size_t)i * m];
-                for (int t = 0; t < m; ++t) { Bi[t] -= f * Bk[t]; Ii[t] -= f * Ik[t]; }
+            if (F.factor(m, bstart, bidx, bval)) return true;
+            repaired = true;
+            for (size_t t = 0; t < F.bad_cols.size(); ++t) {
+                int k = F.bad_cols[t], i = F.bad_rows[t];
+                st[head[k]] = AT_LB;
+                head[k] = n + i; st[n + i] = BASIC;
             }
         }
-        return true;
+        return false;
     }
 
     void place_nonbasic(int j) {
@@ -184,22 +404,14 @@ struct Simplex {
             double xj = x[j];
             if (xj != 0.0) col(j, [&](int i, double v) { rhs[i] -= v * xj; });
         }
-        for (int k = 0; k < m; ++k) {
-            const double* Bk = &Binv[(size_t)k * m];
-            double s = 0.0;
-            for (int i = 0; i < m; ++i) s += Bk[i] * rhs[i];
-            x[head[k]] = s;
-        }
+        F.ftran(rhs);
+        for (int k = 0; k < m; ++k) x[head[k]] = rhs[k];
     }
 
     void compute_duals() {
-        std::vector<double> y(m, 0.0);
-        for (int k = 0; k < m; ++k) {
-            double cb = c[head[k]];
-            if (cb == 0.0) continue;
-            const double* Bk = &Binv[(size_t)k * m];
-            for (int i = 0; i < m; ++i) y[i] += cb * Bk[i];
-        }
+        std::vector<double> y(m);
+        for (int k = 0; k < m; ++k) y[k] = c[head[k]];
+        F.btran(y);
         for (int j = 0; j < N; ++j) {
             if (st[j] == BASIC) { d[j] = 0.0; continue; }
             double s = c[j];
@@ -208,11 +420,14 @@ struct Simplex {
         }
     }
 
-    void compute_weights() {
+    // exact dual steepest-edge weights for the positions marked unknown (w < 0), or for all positions
+    void exact_weights(bool all) {
         for (int k = 0; k < m; ++k) {
-            const double* Bk = &Binv[(size_t)k * m];
+            if (!all && w[k] >= 0.0) continue;
+            rho.assign(m, 0.0); rho[k] = 1.0;
+            F.btran(rho);
             double s = 0.0;
-            for (int i = 0; i < m; ++i) s += Bk[i] * Bk[i];
+            for (double v : rho) s += v * v;
             w[k] = std::max(s, 1e-12);
         }
     }
@@ -233,17 +448,22 @@ struct Simplex {
         compute_xB();
     }
 
+    // refactorise and recompute primal and dual values; the weights are kept (the basis is unchanged)
+    // unless the basis had to be repaired
     bool refactor_full() {
-        if (!reinvert()) {
-            // singular basis: fall back to the all-logical basis
-            for (int j = 0; j < N; ++j) if (st[j] == BASIC) st[j] = AT_LB;
+        bool repaired = false;
+        if (!reinvert(repaired)) {
+            for (int j = 0; j < N; ++j) if (st[j] == BASIC) st[j] = AT_LB;      // last resort: slack basis
             for (int i = 0; i < m; ++i) { head[i] = n + i; st[n + i] = BASIC; }
-            if (!reinvert()) return false;
+            if (!reinvert(repaired)) return false;
+            w.assign(m, 1.0);
+        } else if (repaired) {
+            if (m <= 5000) exact_weights(true); else w.assign(m, 1.0);
         }
         compute_xB();
         compute_duals();
         make_dual_feasible();
-        compute_weights();
+        exact_weights(false);
         since_refactor = 0;
         return true;
     }
@@ -260,34 +480,34 @@ struct Simplex {
         return 0.0;
     }
 
-    // tableau row of basis position r:  ar[j] = (Binv row r) . a_j  for nonbasic j
+    // tableau row of basis position r:  rho = (row r of B^-1),  ar[j] = rho . a_j  for nonbasic j
     void row_alpha(int r) {
-        const double* rho = &Binv[(size_t)r * m];
-        for (int j = 0; j < N; ++j) {
-            if (st[j] == BASIC) { ar[j] = 0.0; continue; }
-            double s = 0.0;
-            col(j, [&](int i, double v) { s += rho[i] * v; });
-            ar[j] = s;
+        rho.assign(m, 0.0); rho[r] = 1.0;
+        F.btran(rho);
+        int nz = 0;
+        for (int i = 0; i < m; ++i) if (rho[i] != 0.0) ++nz;
+        if (nz * 10 < m) {                       // sparse rho: accumulate row by row
+            std::fill(ar.begin(), ar.begin() + n, 0.0);
+            for (int i = 0; i < m; ++i) {
+                double v = rho[i];
+                if (v == 0.0) continue;
+                for (int t = rp[i]; t < rp[i + 1]; ++t) ar[rc[t]] += v * rv[t];
+            }
+        } else {
+            for (int j = 0; j < n; ++j) {
+                double s = 0.0;
+                for (int t = M->cp[j]; t < M->cp[j + 1]; ++t) s += rho[M->ri[t]] * M->cv[t];
+                ar[j] = s;
+            }
         }
+        for (int i = 0; i < m; ++i) ar[n + i] = -rho[i];
+        for (int k = 0; k < m; ++k) ar[head[k]] = 0.0;
     }
 
     void col_alpha(int q) {
-        std::fill(acol.begin(), acol.end(), 0.0);
-        col(q, [&](int i, double v) {
-            for (int k = 0; k < m; ++k) acol[k] += Binv[(size_t)k * m + i] * v;
-        });
-    }
-
-    void pivot_update(int r) {
-        double piv = acol[r];
-        double* Br = &Binv[(size_t)r * m];
-        for (int t = 0; t < m; ++t) Br[t] /= piv;
-        for (int k = 0; k < m; ++k) {
-            if (k == r || acol[k] == 0.0) continue;
-            double f = acol[k];
-            double* Bk = &Binv[(size_t)k * m];
-            for (int t = 0; t < m; ++t) Bk[t] -= f * Br[t];
-        }
+        acol.assign(m, 0.0);
+        col(q, [&](int i, double v) { acol[i] += v; });
+        F.ftran(acol);
     }
 
     // bounded dual simplex from a dual feasible basis
@@ -295,7 +515,7 @@ struct Simplex {
         int boxes_grown = 0;
         for (;;) {
             if (since_refactor >= opt.refactor && !refactor_full()) return NUMERIC;
-            if ((iters & 63) == 0 && Clock::now() > t_end) return TIME_LIMIT;
+            if (Clock::now() > t_end) return TIME_LIMIT;
             if (iters >= opt.max_lp_iter) return ITER_LIMIT;
             // pricing: dual steepest edge
             int r = -1; double best = 0.0;
@@ -306,10 +526,15 @@ struct Simplex {
                 if (score > best) { best = score; r = k; }
             }
             if (r < 0) {
-                // optimal for the boxed problem: an active artificial bound means the box was too small
+                // optimal for the boxed problem. An artificial bound that is active with a reduced cost of the
+                // wrong sign for the real (infinite) bound means the box was too small; with a zero reduced
+                // cost the point is also optimal for the original problem.
                 bool hit = false;
-                for (int j = 0; j < N; ++j)
-                    if (art[j] && st[j] != BASIC && std::fabs(x[j]) >= big * 0.999) hit = true;
+                for (int j = 0; j < N; ++j) {
+                    if (!art[j] || st[j] == BASIC) continue;
+                    if (st[j] == AT_UB && ub[j] >= big * 0.999 && d[j] < -opt.tol_d) hit = true;
+                    if (st[j] == AT_LB && lb[j] <= -big * 0.999 && d[j] > opt.tol_d) hit = true;
+                }
                 if (!hit) return OPTIMAL;
                 if (++boxes_grown > 3) return UNBOUNDED;
                 big *= 1000.0;
@@ -350,7 +575,8 @@ struct Simplex {
             if (q < 0) return NUMERIC;
             col_alpha(q);
             if (std::fabs(acol[r] - ar[q]) > 1e-6 * (1.0 + std::fabs(ar[q]))) {
-                if (!refactor_full()) return NUMERIC;   // stale inverse: refresh and retry
+                if (since_refactor == 0) return NUMERIC;   // inconsistent even on a fresh factorisation
+                if (!refactor_full()) return NUMERIC;   // stale factorisation: refresh and retry
                 continue;
             }
             // dual update (cost shifting when the entering reduced cost has the wrong sign)
@@ -370,21 +596,19 @@ struct Simplex {
             st[jl] = to_lb ? AT_LB : AT_UB;
             st[q] = BASIC;
             head[r] = q;
-            // exact dual steepest-edge weights after the inverse update
-            pivot_update(r);
+            // dual steepest-edge weights (Forrest-Goldfarb):  w_k += -2 (a_k/a_r) tau_k + (a_k/a_r)^2 w_r
+            tau = rho;
+            F.ftran(tau);
             double wr = 0.0;
-            {
-                const double* Br = &Binv[(size_t)r * m];
-                for (int t = 0; t < m; ++t) wr += Br[t] * Br[t];
-            }
-            w[r] = std::max(wr, 1e-12);
+            for (double v : rho) wr += v * v;
+            double alr = acol[r];
             for (int k = 0; k < m; ++k) {
                 if (k == r || acol[k] == 0.0) continue;
-                const double* Bk = &Binv[(size_t)k * m];
-                double s = 0.0;
-                for (int t = 0; t < m; ++t) s += Bk[t] * Bk[t];
-                w[k] = std::max(s, 1e-12);
+                double g = acol[k] / alr;
+                w[k] = std::max(w[k] - 2.0 * g * tau[k] + g * g * wr, 1e-12);
             }
+            w[r] = std::max(wr / (alr * alr), 1e-12);
+            F.add_eta(r, acol);
             ++iters; ++since_refactor;
         }
     }
@@ -398,6 +622,167 @@ struct Simplex {
         }
         return r;
     }
+
+    // ------------------------------------------------------------------ primal simplex and crossover
+    std::vector<double> cshift, wp;      // original costs while shifted (crossover); primal Devex weights
+
+    // refactorise and recompute primal and dual values without touching the nonbasic bound statuses
+    bool refactor_basis() {
+        bool repaired = false;
+        if (!reinvert(repaired)) return false;
+        compute_xB();
+        compute_duals();
+        since_refactor = 0;
+        return true;
+    }
+
+    double dual_infeas(int j) const {
+        if (st[j] == BASIC || lb[j] == ub[j]) return 0.0;
+        if (st[j] == AT_LB) return std::max(0.0, -d[j]);
+        if (st[j] == AT_UB) return std::max(0.0, d[j]);
+        return std::fabs(d[j]);                          // free nonbasic
+    }
+
+    // bounded primal simplex (phase 2) from a primal feasible basis: Devex pricing, Harris ratio test,
+    // bound flips of boxed entering columns
+    Result primal() {
+        wp.assign(N, 1.0);
+        for (;;) {
+            if (since_refactor >= opt.refactor && !refactor_basis()) return NUMERIC;
+            if (Clock::now() > t_end) return TIME_LIMIT;
+            if (iters >= opt.max_lp_iter) return ITER_LIMIT;
+            int q = -1; double best = 0.0;
+            for (int j = 0; j < N; ++j) {
+                double v = dual_infeas(j);
+                if (v <= opt.tol_d) continue;
+                double score = v * v / wp[j];
+                if (score > best) { best = score; q = j; }
+            }
+            if (q < 0) return OPTIMAL;
+            double dir = st[q] == AT_UB || (st[q] == AT_ZERO && d[q] > 0) ? -1.0 : 1.0;
+            col_alpha(q);
+            // Harris two-pass ratio test over the basic variables
+            double tmax = INF;
+            for (int k = 0; k < m; ++k) {
+                double a = dir * acol[k];
+                if (std::fabs(a) < opt.tol_piv) continue;
+                int j = head[k];
+                double room = a > 0 ? x[j] - lb[j] : ub[j] - x[j];      // x_j moves by -t * a
+                if (std::isfinite(room)) tmax = std::min(tmax, (std::max(room, 0.0) + opt.tol_p) / std::fabs(a));
+            }
+            double flip = ub[q] - lb[q];                                  // entering column hits its other bound
+            int r = -1; double amax = 0.0, t = 0.0;
+            if (tmax < INF) {
+                for (int k = 0; k < m; ++k) {
+                    double a = dir * acol[k];
+                    if (std::fabs(a) < opt.tol_piv) continue;
+                    int j = head[k];
+                    double room = a > 0 ? x[j] - lb[j] : ub[j] - x[j];
+                    if (!std::isfinite(room)) continue;
+                    double ratio = std::max(room, 0.0) / std::fabs(a);
+                    if (ratio <= tmax && std::fabs(a) > amax) { amax = std::fabs(a); r = k; t = ratio; }
+                }
+            }
+            if (std::isfinite(flip) && (r < 0 || flip <= t)) {
+                for (int k = 0; k < m; ++k) x[head[k]] -= flip * dir * acol[k];
+                st[q] = st[q] == AT_LB ? AT_UB : AT_LB;
+                x[q] = st[q] == AT_LB ? lb[q] : ub[q];
+                ++iters;
+                continue;
+            }
+            if (r < 0) return UNBOUNDED;
+            row_alpha(r);
+            if (std::fabs(acol[r] - ar[q]) > 1e-6 * (1.0 + std::fabs(ar[q]))) {
+                if (since_refactor == 0) return NUMERIC;
+                if (!refactor_basis()) return NUMERIC;
+                continue;
+            }
+            int jl = head[r];
+            bool leave_lb = dir * acol[r] > 0;
+            for (int k = 0; k < m; ++k) x[head[k]] -= t * dir * acol[k];
+            x[q] += t * dir;
+            x[jl] = leave_lb ? lb[jl] : ub[jl];
+            // reduced costs and Devex weights
+            double theta = d[q] / ar[q];
+            double wq = std::max(wp[q], 1.0);
+            for (int j = 0; j < N; ++j) {
+                if (st[j] == BASIC || j == q) continue;
+                d[j] -= theta * ar[j];
+                double g = ar[j] / ar[q];
+                wp[j] = std::max(wp[j], g * g * wq);
+            }
+            d[q] = 0.0;
+            d[jl] = -theta;
+            wp[jl] = std::max(wq / (ar[q] * ar[q]), 1.0);
+            st[jl] = leave_lb ? AT_LB : AT_UB;
+            st[q] = BASIC;
+            head[r] = q;
+            F.add_eta(r, acol);
+            ++iters; ++since_refactor;
+        }
+    }
+
+    // Shift the costs of nonbasic columns so that the basis becomes dual feasible, with every reduced cost at
+    // least a small pseudo-random margin on the right side (cost perturbation against dual degeneracy and
+    // cycling). The original costs are saved and restored exactly afterwards.
+    void shift_costs() {
+        cshift = c;
+        for (int j = 0; j < N; ++j) {
+            if (st[j] == BASIC || lb[j] == ub[j]) continue;
+            double eps = 1e-6 * (1.0 + (double)((uint32_t)j * 2654435761u % 1000u) / 1000.0);
+            double target = st[j] == AT_LB ? std::max(d[j], eps) : st[j] == AT_UB ? std::min(d[j], -eps) : 0.0;
+            c[j] += target - d[j];
+            d[j] = target;
+        }
+    }
+
+    void unshift_costs() {
+        c = cshift;
+        cshift.clear();
+    }
+
+    // crash basis from an approximate solution x0 (structural columns): columns and row activities strictly
+    // inside their bounds become basic (the furthest from a bound first), the rest are placed at the nearer bound
+    void init_from_point(const std::vector<double>& slb, const std::vector<double>& sub,
+                         const std::vector<double>& x0) {
+        n = M->n; m = M->m; N = n + m;
+        c.assign(N, 0.0); lb.assign(N, 0.0); ub.assign(N, 0.0); x.assign(N, 0.0); d.assign(N, 0.0);
+        art.assign(N, 0); st.assign(N, AT_LB); ar.assign(N, 0.0); acol.assign(m, 0.0);
+        for (int j = 0; j < n; ++j) { c[j] = M->c[j]; lb[j] = slb[j]; ub[j] = sub[j]; }
+        for (int i = 0; i < m; ++i) { lb[n + i] = M->rlo[i]; ub[n + i] = M->rhi[i]; }
+        build_rows();
+        std::vector<double> v(N, 0.0);
+        for (int j = 0; j < n; ++j) {
+            v[j] = x0[j];
+            for (int t = M->cp[j]; t < M->cp[j + 1]; ++t) v[n + M->ri[t]] += M->cv[t] * x0[j];
+        }
+        std::vector<std::pair<double, int>> cand;
+        for (int j = 0; j < N; ++j) {
+            double tl = opt.crash_tol * (1.0 + std::fabs(lb[j])), tu = opt.crash_tol * (1.0 + std::fabs(ub[j]));
+            bool at_l = std::isfinite(lb[j]) && v[j] <= lb[j] + tl, at_u = std::isfinite(ub[j]) && v[j] >= ub[j] - tu;
+            if (at_l || at_u) {
+                st[j] = at_l && (!at_u || v[j] - lb[j] <= ub[j] - v[j]) ? AT_LB : AT_UB;
+                continue;
+            }
+            st[j] = std::isfinite(lb[j]) ? AT_LB : std::isfinite(ub[j]) ? AT_UB : AT_ZERO;
+            cand.push_back({std::min(v[j] - lb[j], ub[j] - v[j]), j});
+        }
+        std::sort(cand.begin(), cand.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        head.clear();
+        for (auto& e : cand) {
+            if ((int)head.size() == m) break;
+            head.push_back(e.second); st[e.second] = BASIC;
+        }
+        for (int i = 0; i < m && (int)head.size() < m; ++i)
+            if (st[n + i] != BASIC) { head.push_back(n + i); st[n + i] = BASIC; }
+        w.assign(m, m <= 5000 ? -1.0 : 1.0);
+        // factorise with a strict pivot tolerance: near-dependent crash columns are swapped for logicals
+        double tol = F.abs_tol;
+        F.abs_tol = 1e-6;
+        refactor_basis();
+        F.abs_tol = tol;
+        exact_weights(false);
+    }
 };
 
 // ---------------------------------------------------------------------------------------------- MILP
@@ -406,13 +791,39 @@ struct Node {
     long id;
     int branch_var, dir;       // dir: -1 down, +1 up (for pseudocost update)
     double frac, parent_obj;
-    std::vector<std::pair<int, std::pair<double, double>>> bnds;
-    std::vector<int> head;
-    std::vector<int8_t> st;
+    int leaf = -1;                // last branching record on the path from the root (see Branch)
+    std::vector<uint8_t> basis;   // warm start: 2-bit status of every column, packed 4 per byte
+
+    void save(const std::vector<int8_t>& st) {
+        basis.assign((st.size() + 3) / 4, 0);
+        for (size_t j = 0; j < st.size(); ++j) basis[j >> 2] |= (uint8_t)(st[j] << ((j & 3) * 2));
+    }
+    // restore the column statuses; the basis order is rebuilt from the basic columns
+    void load(std::vector<int8_t>& st, std::vector<int>& head) const {
+        head.clear();
+        for (size_t j = 0; j < st.size(); ++j) {
+            st[j] = (int8_t)((basis[j >> 2] >> ((j & 3) * 2)) & 3);
+            if (st[j] == BASIC) head.push_back((int)j);
+        }
+    }
+};
+// Branching decisions of all nodes, stored once: one bound change per record plus the index of its parent record
+// (-1 = root). A node is identified by its last record, so memory grows with the number of nodes, not with
+// nodes x depth.
+struct Branch {
+    int parent, var;
+    double lo, hi;
 };
 struct NodeCmp {
     bool operator()(const Node* a, const Node* b) const {
         return a->bound > b->bound || (a->bound == b->bound && a->id < b->id);
+    }
+};
+// best-bound queue of open nodes; clear() frees them in O(n) instead of popping one by one
+struct NodeHeap : std::priority_queue<Node*, std::vector<Node*>, NodeCmp> {
+    void clear() {
+        for (Node* p : c) delete p;
+        c.clear();
     }
 };
 
@@ -432,6 +843,102 @@ struct Solver {
     std::vector<int> pc_cnt[2];
     std::vector<std::vector<std::pair<int, double>>> rowsR;   // row copy of the ORIGINAL model
     int m_orig = 0;
+    std::vector<double> colscale;   // x_j (original) = colscale[j] * x_j (scaled)
+
+    // Geometric-mean scaling (four passes over rows and columns), then equilibration so that the largest |a_ij|
+    // of every row and column is 1. Factors are rounded to powers of two (no rounding error is introduced);
+    // integer columns keep the factor 1 so that integrality is unchanged.
+    void scale_model() {
+        int n = M.n, m = M.m;
+        std::vector<double> rs(m, 1.0), cs(n, 1.0);
+        auto pass = [&](bool geometric) {
+            std::vector<double> lo(m, INF), hi(m, 0.0);
+            for (int j = 0; j < n; ++j)
+                for (int t = M.cp[j]; t < M.cp[j + 1]; ++t) {
+                    double v = std::fabs(M.cv[t]) * rs[M.ri[t]] * cs[j];
+                    if (v == 0.0) continue;
+                    lo[M.ri[t]] = std::min(lo[M.ri[t]], v); hi[M.ri[t]] = std::max(hi[M.ri[t]], v);
+                }
+            for (int i = 0; i < m; ++i) if (hi[i] > 0.0) rs[i] /= geometric ? std::sqrt(lo[i] * hi[i]) : hi[i];
+            for (int j = 0; j < n; ++j) {
+                if (M.isint[j]) continue;
+                double l = INF, h = 0.0;
+                for (int t = M.cp[j]; t < M.cp[j + 1]; ++t) {
+                    double v = std::fabs(M.cv[t]) * rs[M.ri[t]] * cs[j];
+                    if (v == 0.0) continue;
+                    l = std::min(l, v); h = std::max(h, v);
+                }
+                if (h > 0.0) cs[j] /= geometric ? std::sqrt(l * h) : h;
+            }
+        };
+        for (int k = 0; k < 4; ++k) pass(true);
+        pass(false);
+        for (auto& v : rs) v = std::exp2(std::round(std::log2(v)));
+        for (auto& v : cs) v = std::exp2(std::round(std::log2(v)));
+        for (int j = 0; j < n; ++j) {
+            for (int t = M.cp[j]; t < M.cp[j + 1]; ++t) M.cv[t] *= rs[M.ri[t]] * cs[j];
+            M.c[j] *= cs[j]; M.lb[j] /= cs[j]; M.ub[j] /= cs[j];
+        }
+        for (int i = 0; i < m; ++i) { M.rlo[i] *= rs[i]; M.rhi[i] *= rs[i]; }
+        colscale.swap(cs);
+    }
+
+    int solve(Info& info, std::vector<double>& xout) {
+        scale_model();
+        int status = solve_scaled(info, xout);
+        for (size_t j = 0; j < xout.size(); ++j) xout[j] *= colscale[j];
+        return status;
+    }
+
+    // Crossover: approximate LP solution x0 (e.g. from the GPU engine) -> optimal vertex. Crash basis from x0,
+    // dual simplex on shifted costs until primal feasible, then primal simplex without the shifts, then a final
+    // dual simplex check on a fresh factorisation.
+    int crossover(const std::vector<double>& x0, Info& info, std::vector<double>& xout) {
+        scale_model();
+        std::vector<double> xs(M.n);
+        for (int j = 0; j < M.n; ++j) xs[j] = x0[j] / colscale[j];
+        t0 = Clock::now();
+        S.M = &M; S.opt = opt;
+        S.t_end = t0 + std::chrono::milliseconds((long long)(opt.time_limit * 1000));
+        S.init_from_point(M.lb, M.ub, xs);
+        // iteration budget: a crossover that needs more than this is slower than a cold start (the caller then
+        // falls back to one)
+        S.opt.max_lp_iter = std::max(5000L, (long)S.m + S.n);
+        long crash_basic = 0;
+        for (int k = 0; k < S.m; ++k) crash_basic += S.head[k] < S.n;
+        S.shift_costs();
+        Result r = S.dual();
+        long it_dual = S.iters;
+        if (r == OPTIMAL) {
+            S.unshift_costs();
+            r = S.refactor_basis() ? S.primal() : NUMERIC;
+        }
+        long it_primal = S.iters - it_dual;
+        if (r == OPTIMAL) {
+            S.w.assign(S.m, 1.0);
+            r = S.solve();
+        }
+        std::vector<double> xkeep;
+        if (r == OPTIMAL) {                  // polish with 100x tighter tolerances, as for a cold LP solve
+            xkeep = S.x;
+            S.opt.tol_p = S.opt.tol_d = 1e-9;
+            S.opt.max_lp_iter = S.iters + std::max(5000L, (long)S.m + S.n);
+            if (!(S.refactor_full() && S.dual() == OPTIMAL)) S.x = xkeep;
+            S.opt = opt;
+        }
+        if (opt.verbose)
+            std::printf("crossover: %ld structural columns basic in the crash basis, %ld dual + %ld primal + %ld "
+                        "cleanup iterations, %.2f s\n", crash_basic, it_dual, it_primal,
+                        S.iters - it_dual - it_primal, seconds_since(t0));
+        info.lp_iters = (double)S.iters;
+        info.time = seconds_since(t0);
+        if (r != OPTIMAL) return r == TIME_LIMIT ? 3 : r == INFEASIBLE ? 1 : r == UNBOUNDED ? 2 : 5;
+        xout.assign(S.x.begin(), S.x.begin() + M.n);
+        for (int j = 0; j < M.n; ++j) xout[j] *= colscale[j];
+        info.obj = info.bound = S.objective();
+        info.gap = 0.0;
+        return 0;
+    }
 
     bool feasible_original(const std::vector<double>& xs) const {
         for (int j = 0; j < M.n; ++j) {
@@ -573,7 +1080,7 @@ struct Solver {
         return (int)cuts.size();
     }
 
-    int solve(Info& info, std::vector<double>& xout) {
+    int solve_scaled(Info& info, std::vector<double>& xout) {
         t0 = Clock::now();
         S.M = &M; S.opt = opt;
         S.t_end = t0 + std::chrono::milliseconds((long long)(opt.time_limit * 1000));
@@ -593,8 +1100,18 @@ struct Solver {
         }
         info.root_bound = S.objective();
         if (!has_int) {
+            // polish: re-solve from the optimal basis with tolerances 100x tighter; keep the first answer if the
+            // tight pass does not finish cleanly (ill-conditioned models)
             xout.assign(S.x.begin(), S.x.begin() + M.n);
-            info.obj = info.bound = S.objective(); info.gap = 0; info.time = seconds_since(t0);
+            double obj = S.objective();
+            S.opt.tol_p = S.opt.tol_d = 1e-9;
+            if (S.refactor_full() && S.dual() == OPTIMAL) {
+                xout.assign(S.x.begin(), S.x.begin() + M.n);
+                obj = S.objective();
+            }
+            S.opt = opt;
+            info.lp_iters = (double)S.iters;
+            info.obj = info.bound = obj; info.gap = 0; info.time = seconds_since(t0);
             return 0;
         }
         // root cutting-plane loop
@@ -618,18 +1135,28 @@ struct Solver {
         info.root_bound_cuts = S.objective();
 
         // branch-and-bound with plunging
-        std::priority_queue<Node*, std::vector<Node*>, NodeCmp> heap;
+        NodeHeap heap;
         long next_id = 0, nodes = 0;
         std::vector<double> cur_lb = root_lb, cur_ub = root_ub;
-        auto apply_bounds = [&](const Node& nd) {
+        std::vector<Branch> tree;
+        std::vector<char> seen(M.n, 0);
+        std::vector<int> touched;
+        auto apply_bounds = [&](int leaf) {
             cur_lb = root_lb; cur_ub = root_ub;
-            for (auto& b : nd.bnds) { cur_lb[b.first] = b.second.first; cur_ub[b.first] = b.second.second; }
+            for (int b = leaf; b >= 0; b = tree[b].parent) {
+                const Branch& br = tree[b];
+                if (seen[br.var]) continue;            // a deeper record of the same column is tighter
+                seen[br.var] = 1; touched.push_back(br.var);
+                cur_lb[br.var] = br.lo; cur_ub[br.var] = br.hi;
+            }
+            for (int j : touched) seen[j] = 0;
+            touched.clear();
             for (int j = 0; j < M.n; ++j) {
                 if (!S.art[j] || std::isfinite(root_lb[j])) S.lb[j] = cur_lb[j];
                 if (!S.art[j] || std::isfinite(root_ub[j])) S.ub[j] = cur_ub[j];
             }
         };
-        std::vector<std::pair<int, std::pair<double, double>>> path;   // bound changes of the current node
+        int path = -1;               // last branching record of the current node
         double cur_bound = S.objective();
         bool have_node = true;       // the LP in S is the current node (root)
         int pc_var = -1, pc_dir = 0; double pc_frac = 0, pc_parent = 0;
@@ -652,10 +1179,11 @@ struct Solver {
                 }
                 if (!nd) break;
                 double popped_bound = nd->bound;
-                apply_bounds(*nd);
-                S.head = nd->head;
-                for (int j = 0; j < S.N; ++j) S.st[j] = nd->st[j];
-                path = nd->bnds;
+                apply_bounds(nd->leaf);
+                nd->load(S.st, S.head);
+                // steepest-edge weights of the restored basis: exact for small models, else restart from 1
+                S.w.assign(S.m, S.m <= 1000 ? -1.0 : 1.0);
+                path = nd->leaf;
                 pc_var = nd->branch_var; pc_dir = nd->dir; pc_frac = nd->frac; pc_parent = nd->parent_obj;
                 delete nd;
                 if (!S.refactor_full()) { status = 5; break; }
@@ -699,16 +1227,16 @@ struct Solver {
             Node* other = new Node();
             other->bound = cur_bound; other->id = next_id++;
             other->branch_var = bv; other->dir = -first; other->frac = f; other->parent_obj = cur_bound;
-            other->bnds = path;
             double olb = cur_lb[bv], oub = cur_ub[bv];
-            if (-first < 0) other->bnds.push_back({bv, {olb, dn}});
-            else other->bnds.push_back({bv, {up, oub}});
-            other->head = S.head;
-            other->st.assign(S.st.begin(), S.st.end());
+            if (-first < 0) tree.push_back({path, bv, olb, dn});
+            else tree.push_back({path, bv, up, oub});
+            other->leaf = (int)tree.size() - 1;
+            other->save(S.st);
             heap.push(other);
             // plunge: change the bound of the basic branching variable, keep the factorisation
-            if (first < 0) { cur_ub[bv] = dn; S.ub[bv] = dn; path.push_back({bv, {olb, dn}}); }
-            else { cur_lb[bv] = up; S.lb[bv] = up; path.push_back({bv, {up, oub}}); }
+            if (first < 0) { cur_ub[bv] = dn; S.ub[bv] = dn; tree.push_back({path, bv, olb, dn}); }
+            else { cur_lb[bv] = up; S.lb[bv] = up; tree.push_back({path, bv, up, oub}); }
+            path = (int)tree.size() - 1;
             double parent = cur_bound;
             Result rr = S.dual();
             ++nodes;
@@ -724,7 +1252,7 @@ struct Solver {
         if (status == 0 || status == 4 || status == 3) {
             if (have_node) gb = std::min(gb, cur_bound);
         }
-        while (!heap.empty()) { delete heap.top(); heap.pop(); }
+        heap.clear();
         info.nodes = (double)nodes;
         info.lp_iters = (double)S.iters;
         info.time = seconds_since(t0);
@@ -746,16 +1274,28 @@ struct Solver {
 // info: [obj, bound, gap, nodes, lp_iters, time, cuts, root_bound, root_bound_after_cuts]
 // return: 0 optimal, 1 infeasible, 2 unbounded, 3 time limit (with solution), 4 node limit (with solution),
 //         5 numerical failure, 6 limit reached without a feasible solution
-SM_API int sm_solve(int n, int m, const int* colptr, const int* rowidx, const double* vals, const double* c,
-                    const double* lb, const double* ub, const double* rlo, const double* rhi, const char* isint,
-                    const double* opts, double* x_out, double* info_out) {
-    sm::Solver s;
+static void load_model(sm::Solver& s, int n, int m, const int* colptr, const int* rowidx, const double* vals,
+                       const double* c, const double* lb, const double* ub, const double* rlo, const double* rhi) {
     s.M.n = n; s.M.m = m;
     s.M.cp.assign(colptr, colptr + n + 1);
     s.M.ri.assign(rowidx, rowidx + colptr[n]);
     s.M.cv.assign(vals, vals + colptr[n]);
     s.M.c.assign(c, c + n); s.M.lb.assign(lb, lb + n); s.M.ub.assign(ub, ub + n);
     s.M.rlo.assign(rlo, rlo + m); s.M.rhi.assign(rhi, rhi + m);
+    s.M.isint.assign(n, 0);
+}
+
+static void store_info(const sm::Info& info, double* info_out) {
+    double vals_out[9] = {info.obj, info.bound, info.gap, info.nodes, info.lp_iters, info.time, info.cuts,
+                          info.root_bound, info.root_bound_cuts};
+    for (int k = 0; k < 9; ++k) info_out[k] = vals_out[k];
+}
+
+SM_API int sm_solve(int n, int m, const int* colptr, const int* rowidx, const double* vals, const double* c,
+                    const double* lb, const double* ub, const double* rlo, const double* rhi, const char* isint,
+                    const double* opts, double* x_out, double* info_out) {
+    sm::Solver s;
+    load_model(s, n, m, colptr, rowidx, vals, c, lb, ub, rlo, rhi);
     s.M.isint.assign(isint, isint + n);
     s.opt.time_limit = opts[0];
     s.opt.node_limit = (long)opts[1];
@@ -766,8 +1306,75 @@ SM_API int sm_solve(int n, int m, const int* colptr, const int* rowidx, const do
     std::vector<double> x;
     int status = s.solve(info, x);
     for (int j = 0; j < n; ++j) x_out[j] = j < (int)x.size() ? x[j] : 0.0;
-    double vals_out[9] = {info.obj, info.bound, info.gap, info.nodes, info.lp_iters, info.time, info.cuts,
-                          info.root_bound, info.root_bound_cuts};
-    for (int k = 0; k < 9; ++k) info_out[k] = vals_out[k];
+    store_info(info, info_out);
     return status;
+}
+
+// Crossover from an approximate LP solution x0 to an optimal vertex. opts: [time_limit, verbose, crash_tol (0 =
+// default)].
+// Returns 0 optimal, 1 infeasible, 2 unbounded, 3 time limit, 5 numerical failure; info as for sm_solve.
+SM_API int sm_crossover(int n, int m, const int* colptr, const int* rowidx, const double* vals, const double* c,
+                        const double* lb, const double* ub, const double* rlo, const double* rhi, const double* x0,
+                        const double* opts, double* x_out, double* info_out) {
+    sm::Solver s;
+    load_model(s, n, m, colptr, rowidx, vals, c, lb, ub, rlo, rhi);
+    s.opt.time_limit = opts[0];
+    s.opt.verbose = (int)opts[1];
+    if (opts[2] > 0) s.opt.crash_tol = opts[2];
+    sm::Info info;
+    std::vector<double> x, xs(x0, x0 + n);
+    int status = s.crossover(xs, info, x);
+    for (int j = 0; j < n; ++j) x_out[j] = j < (int)x.size() ? x[j] : 0.0;
+    store_info(info, info_out);
+    return status;
+}
+
+// Sparse LU of a square CSC matrix (symmetric != 0: SPD, diagonal pivots), kept between calls (the interior-point method factorises its normal
+// equations once per iteration and solves twice). Returns a handle, or null if the matrix is singular to the
+// given absolute pivot tolerance; the rank is stored in rank_out either way.
+SM_API void* sm_lu_create(int m, const int* colptr, const int* rowidx, const double* vals, double abs_tol,
+                          int symmetric, int* rank_out) {
+    auto* F = new sm::Factor();
+    F->abs_tol = abs_tol;
+    F->symmetric = symmetric != 0;
+    std::vector<int> bs(colptr, colptr + m + 1), bi(rowidx, rowidx + colptr[m]);
+    std::vector<double> bv(vals, vals + colptr[m]);
+    bool ok = F->factor(m, bs, bi, bv);
+    *rank_out = F->rank;
+    if (!ok) { delete F; return nullptr; }
+    return F;
+}
+
+// solve B x = b in place
+SM_API void sm_lu_solve(void* handle, double* b) {
+    auto* F = static_cast<sm::Factor*>(handle);
+    std::vector<double> x(b, b + F->m);
+    F->ftran(x);
+    std::memcpy(b, x.data(), sizeof(double) * F->m);
+}
+
+SM_API long sm_lu_nnz(void* handle) { return static_cast<sm::Factor*>(handle)->nnz(); }
+
+SM_API void sm_lu_free(void* handle) { delete static_cast<sm::Factor*>(handle); }
+
+// Test hook for the sparse LU (tests/test_samadhan.py). Factorises the m x m CSC matrix B; if r >= 0 the basis
+// column r is then replaced by the dense column `newcol` through an eta update. Solves B x = b and B' y = d in
+// place. Returns the rank of the original B (the solves are skipped when it is singular).
+SM_API int sm_lu_check(int m, const int* colptr, const int* rowidx, const double* vals, int r, const double* newcol,
+                       double* b, double* d) {
+    sm::Factor F;
+    std::vector<int> bs(colptr, colptr + m + 1), bi(rowidx, rowidx + colptr[m]);
+    std::vector<double> bv(vals, vals + colptr[m]);
+    if (!F.factor(m, bs, bi, bv)) return F.rank;
+    if (r >= 0) {
+        std::vector<double> alpha(newcol, newcol + m);
+        F.ftran(alpha);
+        F.add_eta(r, alpha);
+    }
+    std::vector<double> x(b, b + m), y(d, d + m);
+    F.ftran(x);
+    F.btran(y);
+    std::memcpy(b, x.data(), sizeof(double) * m);
+    std::memcpy(d, y.data(), sizeof(double) * m);
+    return F.rank;
 }

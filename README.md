@@ -9,12 +9,18 @@
 (Sovereign Alternative to Xpress / CPLEX)* · Team VIGHNAX (127364)**
 
 SAMADHAN (समाधान, "solution") is an optimization solver written from scratch: no CPLEX, Gurobi, Xpress,
-HiGHS, CBC or SCIP code inside. It has two engines:
+HiGHS, CBC or SCIP code inside. It has three engines:
 
 * a **GPU engine for LP and convex QP**: restarted primal-dual hybrid gradient (PDLP / PDQP family), running
   entirely on the GPU with sparse mat-vecs and CUDA graphs;
-* a **C++17 core for MILP**: bounded dual simplex and branch-and-cut (warm-started nodes, pseudocost
-  branching, Gomory mixed-integer cuts).
+* a **C++17 core for LP and MILP**: presolve, a sparse LU factorisation, primal and dual simplex (exact vertex
+  solutions) and branch-and-cut (warm-started nodes, pseudocost branching, Gomory mixed-integer cuts);
+* an **interior-point method for LP** (Mehrotra predictor-corrector, normal equations factorised by the core's
+  sparse LDLᵀ).
+
+**Crossover** joins them: an interior-point or GPU solution is turned into an exact optimal vertex by the
+simplex. `samadhan solve` picks the engine from the model: MILPs and LPs up to 50k variables go to the C++
+core, larger LPs and all QPs to the GPU engine; `--engine ipm` runs the interior-point method with crossover.
 
 HiGHS, the leading open-source solver, is used only as an outside referee for answers and speed.
 
@@ -34,8 +40,8 @@ below, and are stored in [`results/`](results).
 | | What | Result |
 |---|---|---|
 | **LP** | Refinery planning LP, 1.16 M variables | **5.1× faster** than HiGHS at 1e-6 (cost within 0.0002 %), **22×** at 1e-4 |
-| **LP** | Netlib (91 models) | 86 solved to 1e-4 relative KKT; MPS reader identical to HiGHS on 91/91 |
-| **MILP** | MIPLIB 3 (58 models ≤ 1,500 rows, 60 s) | **26 proved optimal**, all correct; 3 of them HiGHS could not finish (nw04, pk1, mas76); HiGHS proves 46 |
+| **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1.1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
+| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **40 proved optimal**, all correct; 4 of them HiGHS could not finish (mas76, nw04, pk1, qiu); faster than HiGHS on 17; HiGHS proves 50 |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
@@ -51,27 +57,29 @@ docker run --rm samadhan
 ```
 
 The build takes a few minutes (it downloads PyTorch and compiles the C++ core). The run is a self-check of
-both engines: small LP, QP and MILP models are solved, every answer is compared with HiGHS or with an optimum
+every engine: small LP, QP and MILP models are solved, every answer is compared with HiGHS or with an optimum
 worked out by hand, and feasibility is recomputed from the returned solution vector instead of trusting the
 solver's own report. Real output on a laptop CPU:
 
 ```text
-SAMADHAN self-check   GPU engine on CPU (no CUDA GPU found)   referee: HiGHS 1.15.1
+SAMADHAN self-check   GPU engine on CPU   referee: HiGHS 1.15.1
 
      model                      vars  engine             SAMADHAN      reference            obj. err  infeas.    time
 ---------------------------------------------------------------------------------------------------------------------
-LP   textbook (2 vars)             2  GPU engine              -36            -36  by hand    5.6e-10  0.0e+00   0.03s  PASS
+LP   textbook (2 vars)             2  GPU engine              -36            -36  by hand    5.6e-10  0.0e+00   0.02s  PASS
 LP   textbook (2 vars)             2  C++ core                -36            -36  by hand    0.0e+00  0.0e+00   0.00s  PASS
-LP   refinery planning         1,708  GPU engine        87491.691      87491.468  HiGHS      2.6e-06  9.6e-07   1.06s  PASS
-LP   refinery planning         1,708  C++ core          87491.468      87491.468  HiGHS      8.3e-16  4.3e-15   0.04s  PASS
+LP   refinery planning         1,708  GPU engine        87491.313      87491.468  HiGHS      1.8e-06  1.2e-06   1.40s  PASS
+LP   refinery planning         1,708  C++ core          87491.468      87491.468  HiGHS      3.3e-16  9.7e-17   0.02s  PASS
+LP   textbook (2 vars)             2  IPM+xover               -36            -36  by hand    0.0e+00  0.0e+00   0.01s  PASS
+LP   refinery planning         1,708  IPM+xover         87491.468      87491.468  HiGHS      3.3e-16  1.3e-16   0.06s  PASS
 QP   HS21, Maros-Meszaros          2  GPU engine           -99.96         -99.96  by hand    0.0e+00  0.0e+00   0.01s  PASS
-QP   refinery, convex costs    1,708  GPU engine        113146.25      113146.25  HiGHS      1.9e-08  5.8e-07   0.61s  PASS
+QP   refinery, convex costs    1,708  GPU engine        113146.25      113146.25  HiGHS      1.9e-08  5.8e-07   0.89s  PASS
 MILP textbook knapsack             2  C++ core                -20            -20  by hand    0.0e+00  0.0e+00   0.00s  PASS
-MILP refinery contracts #0       146  C++ core           27531.34       27531.34  HiGHS      1.2e-15  1.9e-14   0.02s  PASS
-MILP refinery contracts #1       146  C++ core          23781.574      23781.574  HiGHS      3.4e-15  5.4e-13   0.03s  PASS
-MILP refinery contracts #2       146  C++ core          44110.416      44110.416  HiGHS      1.6e-16  2.4e-14   0.00s  PASS
+MILP refinery contracts #0       146  C++ core           27531.34       27531.34  HiGHS      1.2e-15  1.1e-15   0.01s  PASS
+MILP refinery contracts #1       146  C++ core          23781.574      23781.574  HiGHS      1.5e-16  2.5e-13   0.02s  PASS
+MILP refinery contracts #2       146  C++ core          44110.416      44110.416  HiGHS      1.6e-16  2.2e-16   0.00s  PASS
 
-10/10 checks passed in 3.0 s.  obj. err = relative distance to the reference;
+12/12 checks passed in 3.6 s.  obj. err = relative distance to the reference;
 infeas. = worst constraint, bound or integrality violation, recomputed here from the solution vector.
 ```
 
@@ -79,7 +87,7 @@ Then try:
 
 | To see | Run |
 |---|---|
-| Your own model (LP goes to the GPU engine, MILP to the C++ core) | `docker run --rm -v "$PWD:/models" samadhan solve /models/model.mps` |
+| Your own model (the engine is picked from the model) | `docker run --rm -v "$PWD:/models" samadhan solve /models/model.mps` |
 | A 110k-variable refinery planning LP (about 10 s on a CPU) | `docker run --rm samadhan demo --size M --device cpu` |
 | The full test suite | `docker run --rm --entrypoint python samadhan -m pytest -q` |
 
@@ -93,7 +101,7 @@ docker run --rm --gpus all samadhan:gpu demo --size XL --tol 1e-6
 
 On the RTX 5050 laptop this takes 73.7 s inside Docker and 65.5 s natively (the same 1.2 ms per iteration; the
 Docker run needed more iterations), against 323 s for HiGHS. `docker run --rm --gpus all samadhan:gpu` runs the
-self-check on the GPU, and all 28 tests pass in the GPU image.
+self-check on the GPU, and the full test suite passes in the GPU image.
 
 In Windows PowerShell write `${PWD}` instead of `$PWD`. Every number in this README has its raw data in
 [`results/`](results) and the command that produced it under [Reproduce every number](#reproduce-every-number).
@@ -104,7 +112,11 @@ In Windows PowerShell write `${PWD}` instead of `$PWD`. Every number in this REA
 flowchart LR
     A["Model<br/>MPS / QPS / .mat / Python API"] --> B["Scaling<br/>Ruiz + Pock–Chambolle"]
     B --> C["GPU engine (LP + QP)<br/>restarted PDHG · adaptive steps<br/>CUDA graphs · PyTorch sparse CSR"]
-    A --> D["C++ core (MILP)<br/>bounded dual simplex · DSE pricing<br/>branch-and-cut · Gomory cuts"]
+    A --> P["Presolve<br/>fixed · singleton · forcing rows<br/>bound propagation"]
+    P --> D["C++ core (LP + MILP)<br/>sparse LU · primal + dual simplex<br/>branch-and-cut · Gomory cuts"]
+    P --> I["Interior point (LP)<br/>Mehrotra predictor-corrector<br/>sparse LDLᵀ normal equations"]
+    I -- crossover --> D
+    C -- crossover --> D
     C --> E["Certified answer<br/>solution · duals · KKT error"]
     D --> E
 ```
@@ -123,18 +135,30 @@ the faster of its dual simplex and interior point; SAMADHAN with the faster of i
 | L  | 406,080   | 796,512   | 63.9 s | 30.7 s (2.1×) | 5.3 s (12×) |
 | XL | 1,157,120 | 2,273,888 | 323 s  | 63.7 s (5.1×) | 15.0 s (22×) |
 
-**Netlib:** 86/91 solved to 1e-4 relative KKT (CPU mode, median 1.7 s), 80 within 0.1 % of the known optimum.
-The 5 unsolved (bnl1, greenbea, greenbeb, perold, pilot4) are ill-conditioned cases for the planned crossover.
+**Netlib** (91 classic LPs, up to 6,071 rows, one thread, 60 s):
+
+| Engine | Solved | Accuracy | Time |
+|---|---:|---|---|
+| C++ dual simplex (presolve, sparse LU) | **91 / 91** | exact vertices, 90 within 1e-9 of the HiGHS optimum and scsd1 within 1.1e-9 | median 0.013 s (HiGHS 0.010 s), faster than HiGHS on 14 |
+| Interior point + crossover | 89 / 91 | exact vertices, 88 within 1e-9, scsd1 within 2e-9 | median 21 iterations, 0.09 s; dfl001 and fit2p time out at 120 s (dense normal equations) |
+| GPU engine, CPU mode, 1e-4 KKT | 86 / 91 | 80 within 0.1 % | median 1.7 s |
+
+The simplex and the interior-point method also solve the five models the first-order engine cannot (bnl1,
+greenbea, greenbeb, perold, pilot4): these ill-conditioned LPs are exactly where second-order and vertex
+methods are needed. The hardest, pilot87, now lands within 4e-12 of the optimum (simplex) and 8e-15
+(interior point + crossover), thanks to scaling and a final pass at 100× tighter tolerances.
 
 ### MILP — MIPLIB 3
 
 ![MIPLIB](docs/img/miplib.png)
 
-58 MIPLIB 3 models (7 larger ones skipped: the prototype keeps a dense basis inverse), 60 s each, one thread
-each, relative gap 1e-4. **SAMADHAN proves 26 optimal**, every one matching the known optimum;
-HiGHS proves 46. SAMADHAN finishes **nw04** (87,482 columns) in 10.6 s, **pk1** and **mas76** where HiGHS runs
-out of time, and is faster on air03, mod010, khb05250 and p0033. On the rest HiGHS is far ahead: it has
-presolve, many cut families and strong primal heuristics that this prototype does not have yet.
+All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves
+40 optimal**, every one matching the known optimum; HiGHS proves 50. SAMADHAN finishes **mas76, nw04 (87,482
+columns), pk1 and qiu** where HiGHS runs out of time, and is faster than HiGHS on 17 models, for example
+gesa3 (0.3 s vs 3.4 s), cap6000 (0.6 s vs 2.0 s), rentacar (4.3 s vs 10.4 s) and misc07 (12.7 s vs 28.3 s).
+Since the first version (dense basis inverse, 26 of 58) the sparse LU, scaling and presolve added 14 models
+and lost none. On the rest HiGHS is ahead: it has more cut families and stronger primal heuristics, which are
+the next step (roadmap).
 
 ### QP — Maros–Meszaros and refinery QP
 
@@ -161,9 +185,16 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
 
 ## Honest limitations
 
-* Small LPs are faster on HiGHS (CPU simplex); the GPU pays off from roughly 100 k variables.
-* First-order methods reach 1e-4…1e-6 relative accuracy, not simplex vertices; crossover is on the roadmap.
-* The MILP core has no presolve yet and only Gomory cuts, and uses a dense basis inverse (≤ ~1,500 rows).
+* On small LPs HiGHS's simplex is still a little faster than ours (Netlib median 0.010 s against 0.013 s,
+  part of it Python-side presolve); the GPU engine pays off from roughly 100k variables.
+* The GPU engine reaches 1e-4…1e-6 relative accuracy. Crossover turns its solution into an exact vertex and
+  beats a cold-start simplex up to about 10⁵ variables; at 400k variables and above the simplex-based
+  crossover is slower than HiGHS's interior point, so million-variable vertices need a primal-dual push
+  crossover (roadmap).
+* The interior-point method factorises A Θ Aᵀ directly: models with dense columns (fit2p) are slow, as there is
+  no dense-column splitting yet.
+* Presolve covers the standard primal reductions but not yet dual reductions, doubleton substitution or
+  coefficient strengthening; branch-and-cut has only Gomory cuts and simple primal heuristics; one thread.
 
 ## Install without Docker
 
@@ -171,19 +202,22 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
 python -m venv .venv
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128   # or /whl/cpu
 .venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/python -m samadhan verify                         # self-check of both engines, ~10 s
-.venv/Scripts/python -m pytest                                  # 28 correctness tests, ~20 s
+.venv/Scripts/python -m samadhan verify                         # self-check of every engine, ~10 s
+.venv/Scripts/python -m pytest                                  # 44 correctness tests, ~25 s
 .venv/Scripts/python -m samadhan demo --size XL --tol 1e-6      # 1.16M-variable refinery LP on the GPU
-.venv/Scripts/python -m samadhan solve model.mps                # LP -> GPU engine, MILP -> C++ core
+.venv/Scripts/python -m samadhan solve model.mps                # engine picked from the model
 .venv/Scripts/python -m samadhan solve model.mps --engine core  # force the C++ dual simplex / branch-and-cut
+.venv/Scripts/python -m samadhan solve model.mps --engine ipm   # interior point + crossover to a vertex
 ```
 
 ```python
-from samadhan import read_mps, solve, solve_core
+from samadhan import read_mps, solve, solve_core, solve_ipm
 
 lp = read_mps("model.mps")
-print(solve(lp, device="cuda", tol=1e-6).primal_obj)   # GPU engine: LP, or QP when lp.Q is set
-print(solve_core(lp, time_limit=60).obj)               # C++ core: LP or MILP (integer markers in the file)
+print(solve(lp, device="cuda", tol=1e-6).primal_obj)        # GPU engine: LP, or QP when lp.Q is set
+print(solve(lp, tol=1e-4, crossover=True).primal_obj)       # GPU engine + crossover: exact vertex (LP)
+print(solve_ipm(lp, crossover=True).primal_obj)             # interior point + crossover (LP)
+print(solve_core(lp, time_limit=60).obj)                    # C++ core: LP or MILP (integer markers in the file)
 ```
 
 The C++ core is compiled automatically on first use with the zig toolchain (installed from PyPI with the
@@ -198,7 +232,10 @@ Run from the repository root; each script writes the raw results used in this RE
 python -m benchmarks.lp                  # refinery LP table              -> results/lp_refinery.json
 python -m benchmarks.milp                # refinery MILPs, both engines   -> results/milp_refinery.json
 git clone https://github.com/coin-or-tools/Data-Netlib  data/netlib
-python -m benchmarks.netlib              # Netlib LPs                     -> results/lp_netlib.json
+python -m benchmarks.netlib              # Netlib LPs, GPU engine         -> results/lp_netlib.json
+python -m benchmarks.netlib --engine core   # Netlib LPs, C++ simplex     -> results/lp_netlib_core.json
+python -m benchmarks.netlib --engine ipm    # Netlib LPs, IPM + crossover -> results/lp_netlib_ipm.json
+python -m benchmarks.crossover --with-L     # cold simplex vs crossover    -> results/lp_crossover.json
 git clone https://github.com/coin-or-tools/Data-miplib3 data/miplib3
 python -m benchmarks.miplib              # MIPLIB 3                       -> results/milp_miplib3.json
 # Maros-Meszaros .mat files (< 300 KB) from github.com/qpsolvers/maros_meszaros_qpbenchmark -> data/maros/
@@ -215,6 +252,8 @@ samadhan/            the solver package
   core.py            binding for the C++ core; compiles it with zig on first use
   mps.py, qpdata.py  model readers: MPS (free / fixed format, RANGES, integer markers), Maros-Meszaros .mat
   simplex.py, milp.py  pure-Python reference simplex and branch-and-bound, used to cross-check the C++ core
+  presolve.py        presolve and postsolve for the C++ core (LP and MILP)
+  ipm.py             interior-point method (Mehrotra) with crossover
   generate.py        refinery planning LP / QP / MILP generators
   baseline.py        HiGHS referee (LP, QP, MILP), used only for benchmarks and tests
   verify.py          self-check: python -m samadhan verify
@@ -233,16 +272,32 @@ docs/                idea deck (PDF), figures and the script that draws them
   variant has no host synchronisation between checks, so 64 iterations are captured once as a CUDA graph and
   replayed with one launch. For QP the primal step uses `Qx + c − Kᵀy` with `τ ≤ 1/(‖Q‖/2 + σ‖K‖²)`
   (linearised PDHG, as in PDQP) and the Wolfe dual for the gap.
-* **MILP (C++).** Every row gets a logical variable, so the simplex works on `[A −I]` with column bounds.
-  Bounded dual simplex with exact dual steepest-edge weights and a Harris ratio test; the dense basis inverse
-  is updated per pivot and refactorised every 100. Branch-and-bound dives from each node keep the
-  factorisation (a bound change on a basic variable keeps the basis dual feasible); other nodes store their
-  basis for a warm restart. Pseudocost branching, rounding heuristic, Gomory mixed-integer cuts at the root.
+* **Interior point.** Mehrotra predictor-corrector on the standard form `Ax = b, 0 ≤ x ≤ u` (free columns
+  kept, with a small primal regularisation), after Ruiz scaling. Each iteration forms `A Θ Aᵀ`, scales it to a
+  unit diagonal and factorises it once with the C++ sparse LU in symmetric mode (diagonal pivots in
+  minimum-degree order, i.e. LDLᵀ), then solves twice with iterative refinement.
+* **Crossover.** From an interior or GPU point: crash basis (columns strictly inside their bounds become
+  basic), dual simplex on randomly perturbed shifted costs until primal feasible, original costs restored
+  exactly, primal simplex clean-up, and a final pass at 100× tighter tolerances. If it is slower than a cold
+  start it hands over to one, so the answer is always an exact vertex.
+* **Presolve.** Before the C++ core runs, the model is reduced until a pass changes nothing: fixed and empty
+  columns are removed, singleton rows become bounds, rows that their activity bounds already satisfy are
+  dropped, forcing rows fix their columns, and integer columns get tighter bounds from the rows (domain
+  propagation). The solution is mapped back to the original columns and checked against the original rows.
+* **LP / MILP (C++).** Every row gets a logical variable, so the simplex works on `[A −I]` with column
+  bounds, after geometric-mean scaling and equilibration (powers of two). The basis is held as a sparse LU
+  factorisation: Markowitz pivot order with threshold pivoting, product-form eta updates between
+  refactorisations, and repair of singular bases with logical columns. Bounded dual simplex with dual
+  steepest-edge pricing (Forrest–Goldfarb weight updates), a Harris ratio test and row-wise pricing when the
+  pivot row is sparse. Branch-and-bound dives from each node keep the factorisation (a bound change on a basic
+  variable keeps the basis dual feasible); other nodes store a 2-bit-per-column basis for a warm restart.
+  Pseudocost branching, rounding heuristic, Gomory mixed-integer cuts at the root.
 
 ## Roadmap (SIH build phase)
 
-1. Presolve, feasibility polishing and crossover to exact vertices.
-2. Sparse LU with Forrest–Tomlin updates (lift the 1,500-row limit); MIR, cover and flow cuts; feasibility pump.
+1. Primal-dual push crossover for million-variable GPU solutions; dense columns in the interior-point
+   method; dual presolve reductions.
+2. MIR, cover and flow cuts; feasibility pump and diving heuristics; parallel tree search.
 3. GPU LP relaxations inside branch-and-bound for very large MILPs; MIQP.
 4. Native CUDA kernels for the PDHG loop; REST service for plant planning systems.
 
