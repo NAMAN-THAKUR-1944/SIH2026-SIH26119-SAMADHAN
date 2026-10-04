@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parent
 SRC = ROOT.parent / "cpp" / "samadhan_core.cpp"
 LIBDIR = ROOT / "_lib"
 LIBNAME = "samadhan_core.dll" if os.name == "nt" else "libsamadhan_core.so"
+# branch-and-cut features (bit mask): 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
+# 16 node domain propagation
+FEATURES = 27         # all but cover cuts, which cost more than they gave on MIPLIB 3 (ablation)
 STATUS = {0: "optimal", 1: "infeasible", 2: "unbounded", 3: "time_limit", 4: "node_limit", 5: "numerical_error",
           6: "no_solution_found"}
 _lib = None
@@ -147,12 +150,12 @@ class CoreResult:
 
 
 def solve_core(lp: LP, integer=None, time_limit=300.0, node_limit=50_000_000, cut_rounds=8, gap=1e-6,
-               verbose=False, presolve=True) -> CoreResult:
+               verbose=False, presolve=True, features=None) -> CoreResult:
     """Solve an LP (dual simplex) or MILP (branch-and-cut) with the C++ core. Objective includes obj_const."""
     if integer is not None:
         lp = replace(lp, integer=np.asarray(integer, bool))
     if not presolve:
-        return _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose)
+        return _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose, FEATURES if features is None else features)
     from .presolve import presolve as run_presolve
     t0 = time.perf_counter()
     P = run_presolve(lp)
@@ -164,7 +167,8 @@ def solve_core(lp: LP, integer=None, time_limit=300.0, node_limit=50_000_000, cu
     if P.lp.K.shape[1] == 0:                       # presolve fixed every column
         obj = P.lp.obj_const
         return CoreResult("optimal", P.postsolve(np.zeros(0)), obj, obj, 0.0, 0, 0, tp, 0, obj, obj)
-    r = _solve_core(P.lp, max(time_limit - tp, 0.0), node_limit, cut_rounds, gap, verbose)
+    r = _solve_core(P.lp, max(time_limit - tp, 0.0), node_limit, cut_rounds, gap, verbose,
+                    FEATURES if features is None else features)
     return replace(r, x=P.postsolve(r.x) if r.x is not None else None, time=r.time + tp)
 
 
@@ -197,12 +201,12 @@ def _result(st, lp, x, info):
                       info[2], int(info[3]), int(info[4]), info[5], int(info[6]), info[7] + k, info[8] + k)
 
 
-def _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose):
+def _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose, features=FEATURES):
     lib = _load()
     m, n = lp.K.shape
     a = _model_arrays(lp)
     isint = np.ascontiguousarray(np.zeros(n) if lp.integer is None else lp.integer, np.int8)
-    opts = np.array([time_limit, node_limit, cut_rounds, 1 if verbose else 0, gap], np.float64)
+    opts = np.array([time_limit, node_limit, cut_rounds, 1 if verbose else 0, gap, features], np.float64)
     x, info = np.zeros(n), np.zeros(9)
     st = lib.sm_solve(n, m, *_model_args(a), isint.ctypes.data_as(ctypes.POINTER(ctypes.c_char)), _dp(opts),
                       _dp(x), _dp(info))

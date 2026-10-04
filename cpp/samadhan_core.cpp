@@ -23,6 +23,7 @@
 #include <cstring>
 #include <limits>
 #include <queue>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -46,6 +47,8 @@ static double seconds_since(Clock::time_point t0) {
 struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
+    int features = 27;           // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
+                                 // 16 node domain propagation
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
@@ -838,6 +841,7 @@ struct Solver {
     Simplex S;
     Clock::time_point t0;
     std::vector<double> root_lb, root_ub, inc;
+    std::vector<double> orig_lb, orig_ub;     // bounds of the model itself (root bounds may be tightened)
     double inc_obj = INF;
     std::vector<double> pc_sum[2];
     std::vector<int> pc_cnt[2];
@@ -942,7 +946,7 @@ struct Solver {
 
     bool feasible_original(const std::vector<double>& xs) const {
         for (int j = 0; j < M.n; ++j) {
-            if (xs[j] < root_lb[j] - 1e-6 || xs[j] > root_ub[j] + 1e-6) return false;
+            if (xs[j] < orig_lb[j] - 1e-6 || xs[j] > orig_ub[j] + 1e-6) return false;
             if (M.isint[j] && std::fabs(xs[j] - std::round(xs[j])) > opt.int_tol) return false;
         }
         for (int i = 0; i < m_orig; ++i) {
@@ -975,6 +979,330 @@ struct Solver {
         try_incumbent(xs);
     }
 
+    // node LP state, so that heuristics can change bounds and leave the LP exactly as they found it
+    struct LPState {
+        std::vector<double> lb, ub, c, w;
+        std::vector<int> head;
+        std::vector<int8_t> st;
+        std::vector<char> art;
+        double big;
+    };
+    LPState save_lp() const { return {S.lb, S.ub, S.c, S.w, S.head, S.st, S.art, S.big}; }
+    void restore_lp(const LPState& s) {
+        S.lb = s.lb; S.ub = s.ub; S.c = s.c; S.w = s.w; S.head = s.head; S.st = s.st; S.art = s.art; S.big = s.big;
+        S.refactor_full();
+    }
+
+    // Complete an integer assignment xr: fix the integer columns at xr, solve the LP over the continuous columns
+    // with the original costs, and offer the result as an incumbent. The LP is restored afterwards.
+    bool complete_rounding(const std::vector<double>& xr, const std::vector<double>& c0, bool has_cont) {
+        if (!has_cont) {
+            double before = inc_obj;
+            try_incumbent(xr);
+            return inc_obj < before;
+        }
+        LPState saved = save_lp();
+        for (int j = 0; j < M.n; ++j) {
+            S.c[j] = c0[j];
+            if (M.isint[j]) { S.lb[j] = xr[j]; S.ub[j] = xr[j]; }
+        }
+        double before = inc_obj;
+        if (S.refactor_full() && S.dual() == OPTIMAL)
+            try_incumbent(std::vector<double>(S.x.begin(), S.x.begin() + M.n));
+        restore_lp(saved);
+        return inc_obj < before;
+    }
+
+    // Feasibility pump (Fischetti, Glover & Lodi 2005; objective pump of Achterberg & Berthold 2007): alternate
+    // between rounding the LP point and an LP that minimises the L1 distance to the rounding (integer columns at
+    // a bound of the rounding), mixed with a fading share of the original objective. A repeated rounding flips the
+    // columns furthest from it; a longer cycle perturbs the rounding at random. Stops at the first solution.
+    void feasibility_pump(int max_rounds, long lp_budget) {
+        with_budget(lp_budget, 0.05 * opt.time_limit, [&]() { pump_body(max_rounds); });
+    }
+
+    void pump_body(int max_rounds) {
+        int n = M.n;
+        std::vector<double> c0(S.c.begin(), S.c.begin() + n);
+        double cnorm = 0.0;
+        int nint = 0;
+        bool has_cont = false;
+        for (int j = 0; j < n; ++j) {
+            cnorm += c0[j] * c0[j];
+            if (M.isint[j]) ++nint; else has_cont = true;
+        }
+        cnorm = std::sqrt(cnorm);
+        double scale = cnorm > 0 ? std::sqrt((double)nint) / cnorm : 0.0;
+        std::mt19937 rng(12345);
+        std::uniform_real_distribution<double> unif(0.0, 1.0);
+        auto round_point = [&](std::vector<double>& xr) {
+            xr.assign(S.x.begin(), S.x.begin() + n);
+            for (int j = 0; j < n; ++j) if (M.isint[j]) xr[j] = std::round(xr[j]);
+        };
+        std::vector<double> xr, xn;
+        round_point(xr);
+        std::vector<size_t> history;
+        auto hash_of = [&](const std::vector<double>& v) {
+            size_t h = 1469598103934665603ull;
+            for (int j = 0; j < n; ++j) if (M.isint[j]) h = (h ^ (size_t)(long long)v[j]) * 1099511628211ull;
+            return h;
+        };
+        double alpha = 1.0;
+        for (int k = 0; k < max_rounds; ++k) {
+            if (complete_rounding(xr, c0, has_cont)) return;
+            alpha *= 0.9;
+            for (int j = 0; j < n; ++j) {
+                double dist = 0.0;
+                if (M.isint[j]) {
+                    if (xr[j] <= S.lb[j] + 1e-9) dist = 1.0;
+                    else if (xr[j] >= S.ub[j] - 1e-9) dist = -1.0;
+                }
+                S.c[j] = (1.0 - alpha) * dist + alpha * scale * c0[j];
+            }
+            if (!S.refactor_basis() || S.primal() != OPTIMAL) return;
+            round_point(xn);
+            bool same = true;
+            for (int j = 0; j < n && same; ++j) if (M.isint[j] && xn[j] != xr[j]) same = false;
+            if (same) {                                   // short cycle: flip the T most distant columns
+                std::vector<std::pair<double, int>> dev;
+                for (int j = 0; j < n; ++j) if (M.isint[j]) dev.push_back({-std::fabs(S.x[j] - xr[j]), j});
+                int T = 10 + (int)(unif(rng) * 20);
+                std::partial_sort(dev.begin(), dev.begin() + std::min<size_t>(T, dev.size()), dev.end());
+                for (int t = 0; t < T && t < (int)dev.size() && dev[t].first < 0; ++t) {
+                    int j = dev[t].second;
+                    double up = xr[j] + 1, dn = xr[j] - 1;
+                    xn[j] = S.x[j] > xr[j] ? std::min(up, S.ub[j]) : std::max(dn, S.lb[j]);
+                }
+            }
+            size_t h = hash_of(xn);
+            if (std::find(history.begin(), history.end(), h) != history.end()) {   // longer cycle: perturb
+                for (int j = 0; j < n; ++j) {
+                    if (!M.isint[j]) continue;
+                    double rho = unif(rng) - 0.3;
+                    if (std::fabs(S.x[j] - xn[j]) + std::max(rho, 0.0) > 0.5)
+                        xn[j] = xn[j] >= S.x[j] ? std::max(xn[j] - 1, S.lb[j]) : std::min(xn[j] + 1, S.ub[j]);
+                }
+            }
+            history.push_back(h);
+            if (history.size() > 5) history.erase(history.begin());
+            xr.swap(xn);
+        }
+    }
+
+    // Diving: from the current LP solution, repeatedly fix one fractional integer column at an integer and
+    // re-solve with the dual simplex from the current basis, until the LP solution is integral (a new
+    // incumbent), infeasible after one backtrack, no better than the incumbent, or the LP budget is spent.
+    // Without an incumbent the column closest to an integer is rounded (fractional diving); with one, the column
+    // is moved towards the incumbent's value (guided diving). The LP is restored afterwards.
+    double heur_time = 0.0;                     // seconds spent in diving / feasibility pump
+    bool heur_allowed() const { return heur_time < 0.1 * opt.time_limit && Clock::now() < S.t_end; }
+
+    // run a heuristic with an LP iteration budget and a deadline; the LP is restored afterwards
+    template <class Fn> void with_budget(long lp_budget, double seconds, Fn fn) {
+        if (!heur_allowed()) return;
+        auto start = Clock::now();
+        LPState saved = save_lp();
+        long max_iter = S.opt.max_lp_iter;
+        auto t_end = S.t_end;
+        S.opt.max_lp_iter = S.iters + lp_budget;
+        S.t_end = std::min(t_end, start + std::chrono::milliseconds((long long)(seconds * 1000)));
+        fn();
+        S.opt.max_lp_iter = max_iter;
+        S.t_end = t_end;
+        restore_lp(saved);
+        heur_time += seconds_since(start);
+    }
+
+    void dive(long lp_budget) {
+        with_budget(lp_budget, 0.03 * opt.time_limit, [&]() { dive_body(); });
+    }
+
+    void dive_body() {
+        bool guided = std::isfinite(inc_obj), backtracked = false;
+        for (int depth = 0; depth < 2 * M.n; ++depth) {
+            int bj = -1; double bscore = INF, target = 0.0;
+            for (int j = 0; j < M.n; ++j) {
+                if (!M.isint[j]) continue;
+                double v = S.x[j], fl = std::floor(v), f = v - fl;
+                if (f < opt.int_tol || f > 1 - opt.int_tol) continue;
+                double t = guided ? (inc[j] < v ? fl : fl + 1.0) : std::round(v);
+                double score = std::fabs(v - t);
+                if (score < bscore) { bscore = score; bj = j; target = t; }
+            }
+            if (bj < 0) {                                       // integral LP solution
+                try_incumbent(std::vector<double>(S.x.begin(), S.x.begin() + M.n));
+                break;
+            }
+            double v = S.x[bj], olb = S.lb[bj], oub = S.ub[bj];
+            if (target <= v) S.ub[bj] = target; else S.lb[bj] = target;
+            Result r = S.dual();
+            if (r == INFEASIBLE && !backtracked) {              // one backtrack: the other side of the same column
+                backtracked = true;
+                S.lb[bj] = olb; S.ub[bj] = oub;
+                if (target <= v) S.lb[bj] = std::ceil(v); else S.ub[bj] = std::floor(v);
+                r = S.dual();
+            }
+            if (r != OPTIMAL || S.objective() >= cutoff()) break;
+            rounding_heuristic();
+        }
+    }
+
+    // Reduced-cost fixing with the root LP: a nonbasic integer column whose reduced cost shows that moving it by
+    // k units would push the LP bound past the incumbent cannot move that far in any better solution, so its
+    // global bound is tightened. Returns the number of tightened bounds.
+    int reduced_cost_fixing(double root_obj) {
+        double slack = cutoff() - root_obj;
+        if (!std::isfinite(slack) || slack < 0) return 0;
+        int k = 0;
+        for (int j = 0; j < M.n; ++j) {
+            if (!M.isint[j] || S.st[j] == BASIC) continue;
+            double d = S.d[j];
+            if (S.st[j] == AT_LB && d > 1e-9 && std::isfinite(root_lb[j])) {
+                double ub = root_lb[j] + std::floor(slack / d + 1e-9);
+                if (ub < root_ub[j]) { root_ub[j] = ub; S.ub[j] = ub; ++k; }
+            } else if (S.st[j] == AT_UB && d < -1e-9 && std::isfinite(root_ub[j])) {
+                double lb = root_ub[j] - std::floor(slack / -d + 1e-9);
+                if (lb > root_lb[j]) { root_lb[j] = lb; S.lb[j] = lb; ++k; }
+            }
+        }
+        return k;
+    }
+
+    // ---- domain propagation at the nodes
+    // Rows (original rows and cuts) give activity bounds over the node's column bounds; a row that cannot be
+    // satisfied proves the node infeasible, otherwise the bounds of its integer columns are tightened (rounded).
+    // Tightened columns queue their rows again. Work per call is capped.
+    std::vector<std::vector<std::pair<int, double>>> prop_rows;   // row copy of the model with the root cuts
+    std::vector<std::vector<int>> prop_cols;                       // rows of each column
+
+    void build_propagation() {
+        M.rows_of(prop_rows);
+        prop_cols.assign(M.n, {});
+        for (int i = 0; i < M.m; ++i)
+            for (auto& e : prop_rows[i]) prop_cols[e.first].push_back(i);
+    }
+
+    // Returns false if the node is infeasible. Tightened bounds are written to lb/ub and listed in `changed`.
+    bool propagate(const std::vector<int>& start, std::vector<double>& lb, std::vector<double>& ub,
+                   std::vector<int>& changed) {
+        std::vector<int> queue;
+        std::vector<char> queued(M.m, 0);
+        for (int j : start)
+            for (int i : prop_cols[j]) if (!queued[i]) { queued[i] = 1; queue.push_back(i); }
+        long work = 0, cap = 20L * (M.n + M.m);
+        for (size_t qi = 0; qi < queue.size() && work < cap; ++qi) {
+            int i = queue[qi];
+            queued[i] = 0;
+            const auto& row = prop_rows[i];
+            work += (long)row.size();
+            double mn = 0, mx = 0;
+            int mn_inf = 0, mx_inf = 0;
+            for (auto& e : row) {
+                double a = e.second, l = lb[e.first], u = ub[e.first];
+                double lo = a > 0 ? l : u, hi = a > 0 ? u : l;
+                if (std::isfinite(lo)) mn += a * lo; else ++mn_inf;
+                if (std::isfinite(hi)) mx += a * hi; else ++mx_inf;
+            }
+            double rlo = M.rlo[i], rhi = M.rhi[i];
+            double tol = 1e-6 * (1.0 + std::max(std::fabs(std::isfinite(rlo) ? rlo : 0.0),
+                                                 std::fabs(std::isfinite(rhi) ? rhi : 0.0)));
+            if ((mn_inf == 0 && mn > rhi + tol) || (mx_inf == 0 && mx < rlo - tol)) return false;
+            for (auto& e : row) {
+                int j = e.first;
+                if (!M.isint[j]) continue;
+                double a = e.second, l = lb[j], u = ub[j];
+                double cmin = a > 0 ? a * l : a * u, cmax = a > 0 ? a * u : a * l;
+                bool fmin = std::isfinite(cmin), fmax = std::isfinite(cmax);
+                // rest of the row without column j
+                bool rmin_ok = mn_inf - (fmin ? 0 : 1) == 0, rmax_ok = mx_inf - (fmax ? 0 : 1) == 0;
+                double rmin = mn - (fmin ? cmin : 0.0), rmax = mx - (fmax ? cmax : 0.0);
+                double nl = l, nu = u;
+                if (std::isfinite(rhi) && rmin_ok) {            // a x_j <= rhi - rmin
+                    double v = (rhi - rmin) / a;
+                    if (a > 0) nu = std::min(nu, std::floor(v + 1e-6)); else nl = std::max(nl, std::ceil(v - 1e-6));
+                }
+                if (std::isfinite(rlo) && rmax_ok) {            // a x_j >= rlo - rmax
+                    double v = (rlo - rmax) / a;
+                    if (a > 0) nl = std::max(nl, std::ceil(v - 1e-6)); else nu = std::min(nu, std::floor(v + 1e-6));
+                }
+                if (nl > nu + 1e-9) return false;
+                if (nl > l || nu < u) {
+                    lb[j] = nl; ub[j] = nu;
+                    changed.push_back(j);
+                    for (int k : prop_cols[j]) if (!queued[k]) { queued[k] = 1; queue.push_back(k); }
+                    // the activities of row i changed: finish this row with the old values (still valid bounds)
+                }
+            }
+        }
+        return true;
+    }
+
+    // ---- reliability branching
+    // Candidates are ranked by pseudocost score; a candidate whose pseudocosts rest on fewer than 4 observations in
+    // either direction is strong-branched: both children are solved with a few dual simplex iterations from the
+    // node basis (the objective of a dual feasible basis is a valid lower bound) and the gains seed its
+    // pseudocosts. Strong branching stops after 8 candidates without improvement, and its total work is kept below
+    // half of all LP iterations.
+    long sb_iters = 0;
+
+    int reliability_branch(double node_obj) {
+        double avg[2] = {1.0, 1.0};
+        for (int s = 0; s < 2; ++s) {
+            double sum = 0; int cnt = 0;
+            for (int j = 0; j < M.n; ++j) if (pc_cnt[s][j]) { sum += pc_sum[s][j] / pc_cnt[s][j]; ++cnt; }
+            if (cnt) avg[s] = sum / cnt;
+        }
+        std::vector<std::pair<double, int>> cand;
+        for (int j = 0; j < M.n; ++j) {
+            if (!M.isint[j]) continue;
+            double v = S.x[j], f = v - std::floor(v);
+            if (f < opt.int_tol || f > 1 - opt.int_tol) continue;
+            double pd = pc_cnt[0][j] ? pc_sum[0][j] / pc_cnt[0][j] : avg[0];
+            double pu = pc_cnt[1][j] ? pc_sum[1][j] / pc_cnt[1][j] : avg[1];
+            cand.push_back({std::max(pd * f, 1e-6) * std::max(pu * (1 - f), 1e-6), j});
+        }
+        if (cand.empty()) return -1;
+        std::sort(cand.begin(), cand.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        int best = cand[0].second;
+        bool sb_ok = sb_iters < S.iters / 2 + 1000 && Clock::now() < S.t_end;
+        if (!sb_ok) return best;
+        std::vector<double> xnode(S.x.begin(), S.x.begin() + M.n);
+        LPState saved = save_lp();
+        long max_iter = S.opt.max_lp_iter;
+        double best_score = -1.0;
+        int since_best = 0, done = 0;
+        auto gain = [&](int j, bool up) {
+            double v = xnode[j];
+            if (up) S.lb[j] = std::ceil(v); else S.ub[j] = std::floor(v);
+            long it0 = S.iters;
+            S.opt.max_lp_iter = S.iters + 25;
+            Result r = S.dual();
+            sb_iters += S.iters - it0;
+            double g = (r == INFEASIBLE || (r != NUMERIC && S.objective() >= cutoff())) ? 1e30
+                       : (r == OPTIMAL || r == ITER_LIMIT) ? std::max(0.0, S.objective() - node_obj) : -1.0;
+            S.opt.max_lp_iter = max_iter;
+            restore_lp(saved);
+            return g;
+        };
+        for (auto& c : cand) {
+            if (since_best >= 8 || done >= 20 || Clock::now() > S.t_end) break;
+            int j = c.second;
+            double score = c.first;
+            if (pc_cnt[0][j] < 4 || pc_cnt[1][j] < 4) {
+                double f = xnode[j] - std::floor(xnode[j]);
+                double gd = gain(j, false), gu = gain(j, true);
+                ++done;
+                if (gd < 0 || gu < 0) continue;                      // numerical trouble: keep the estimate
+                if (gd < 1e29) { pc_sum[0][j] += gd / std::max(f, 1e-6); pc_cnt[0][j]++; }
+                if (gu < 1e29) { pc_sum[1][j] += gu / std::max(1 - f, 1e-6); pc_cnt[1][j]++; }
+                score = std::max(std::min(gd, 1e15), 1e-6) * std::max(std::min(gu, 1e15), 1e-6);
+            }
+            if (score > best_score) { best_score = score; best = j; since_best = 0; }
+            else ++since_best;
+        }
+        return best;
+    }
+
     int most_fractional_or_pc(double obj) {
         (void)obj;
         double avg[2] = {1.0, 1.0};
@@ -995,6 +1323,70 @@ struct Solver {
             if (score > bscore) { bscore = score; best = j; }
         }
         return best;
+    }
+
+    // ---- knapsack cover cuts from the original rows
+    // Each side of a row  sum a_j x_j <= b  (>= rows are negated) is relaxed to a 0-1 knapsack over its binary
+    // columns: continuous and general-integer terms are replaced by their smallest value over the root bounds,
+    // binaries with a negative coefficient are complemented (y = 1 - x). A cover C (total weight > capacity) is
+    // built greedily by (1 - y*_j) / a_j, extended by every item at least as heavy as the heaviest in C, and added
+    // as  sum_{E(C)} y_j <= |C| - 1  if the LP point violates it.
+    int add_cover_round() {
+        auto is_bin = [&](int j) { return M.isint[j] && root_lb[j] == 0.0 && root_ub[j] == 1.0; };
+        std::vector<std::vector<std::pair<int, double>>> cuts;
+        std::vector<double> lo, hi;
+        struct Item { int j; double a; bool comp; double y; };
+        std::vector<Item> items;
+        for (int i = 0; i < m_orig && (int)cuts.size() < opt.max_cuts_per_round; ++i) {
+            for (int side = 0; side < 2; ++side) {               // side 0: a x <= rhi, side 1: -a x <= -rlo
+                double b = side == 0 ? M.rhi[i] : -M.rlo[i];
+                if (!std::isfinite(b)) continue;
+                double sgn = side == 0 ? 1.0 : -1.0;
+                items.clear();
+                bool ok = true;
+                for (auto& e : rowsR[i]) {
+                    int j = e.first;
+                    double a = sgn * e.second;
+                    if (a == 0.0) continue;
+                    if (is_bin(j)) {
+                        if (a > 0) items.push_back({j, a, false, S.x[j]});
+                        else { items.push_back({j, -a, true, 1.0 - S.x[j]}); b -= a; }
+                    } else {
+                        double v = a > 0 ? root_lb[j] : root_ub[j];
+                        if (!std::isfinite(v)) { ok = false; break; }
+                        b -= a * v;
+                    }
+                }
+                if (!ok || items.size() < 2 || b <= 1e-9) continue;
+                double total = 0.0;
+                for (auto& it : items) total += it.a;
+                if (total <= b + 1e-9) continue;                 // no cover exists
+                std::sort(items.begin(), items.end(), [](const Item& p, const Item& q) {
+                    return (1.0 - p.y) / p.a < (1.0 - q.y) / q.a;
+                });
+                double w = 0.0, amax = 0.0;
+                size_t k = 0;
+                while (k < items.size() && w <= b + 1e-9) { w += items[k].a; amax = std::max(amax, items[k].a); ++k; }
+                if (w <= b + 1e-9) continue;
+                double lhs = 0.0;
+                std::vector<std::pair<int, double>> row;
+                double rhs = (double)k - 1.0;
+                for (size_t t = 0; t < items.size(); ++t) {
+                    if (t >= k && items[t].a < amax) continue;   // extended cover
+                    lhs += items[t].y;
+                    double coef = items[t].comp ? -1.0 : 1.0;    // y = 1 - x  ->  -x, rhs - 1
+                    if (items[t].comp) rhs -= 1.0;
+                    row.push_back({items[t].j, coef});
+                }
+                if (lhs - ((double)k - 1.0) < 1e-4 * std::sqrt((double)row.size())) continue;   // not violated
+                cuts.push_back(row); lo.push_back(-INF); hi.push_back(rhs);
+            }
+        }
+        if (cuts.empty()) return 0;
+        M.add_rows(cuts, lo, hi);
+        S.resize_to_model();
+        S.refactor_full();
+        return (int)cuts.size();
     }
 
     // ---- Gomory mixed-integer cuts from the optimal root tableau
@@ -1085,6 +1477,7 @@ struct Solver {
         S.M = &M; S.opt = opt;
         S.t_end = t0 + std::chrono::milliseconds((long long)(opt.time_limit * 1000));
         root_lb = M.lb; root_ub = M.ub;
+        orig_lb = M.lb; orig_ub = M.ub;
         m_orig = M.m;
         M.rows_of(rowsR);
         for (int s = 0; s < 2; ++s) { pc_sum[s].assign(M.n, 0.0); pc_cnt[s].assign(M.n, 0); }
@@ -1119,6 +1512,7 @@ struct Solver {
         for (int round = 0; round < opt.cut_rounds; ++round) {
             rounding_heuristic();
             int added = add_gomory_round();
+            if (opt.features & 4) added += add_cover_round();
             if (!added) break;
             info.cuts += added;
             r = S.solve();
@@ -1133,6 +1527,17 @@ struct Solver {
             return 5;
         }
         info.root_bound_cuts = S.objective();
+        if (opt.features & 16) build_propagation();
+
+        // root heuristics: feasibility pump and a dive; with an incumbent, reduced-cost fixing and a guided dive
+        long dive_budget = 1000 + 2L * S.m;
+        if ((opt.features & 1) && !std::isfinite(inc_obj)) feasibility_pump(100, 10000 + 20L * S.m);
+        if (opt.features & 2) dive(dive_budget);
+        if (std::isfinite(inc_obj)) {
+            int fixed = reduced_cost_fixing(S.objective());
+            if (opt.verbose && fixed) std::printf("  reduced-cost fixing: %d bounds tightened\n", fixed);
+            if (opt.features & 2) dive(dive_budget);
+        }
 
         // branch-and-bound with plunging
         NodeHeap heap;
@@ -1157,6 +1562,26 @@ struct Solver {
             }
         };
         int path = -1;               // last branching record of the current node
+        // domain propagation after a bound change on column bv: tightenings become branching records of the node;
+        // recompute: refresh the basic values (nonbasic columns may have moved to a new bound)
+        std::vector<int> prop_changed;
+        auto run_propagation = [&](int bv, bool recompute) {
+            if (!(opt.features & 16) || bv < 0) return true;
+            prop_changed.clear();
+            if (!propagate({bv}, cur_lb, cur_ub, prop_changed)) return false;
+            std::sort(prop_changed.begin(), prop_changed.end());
+            prop_changed.erase(std::unique(prop_changed.begin(), prop_changed.end()), prop_changed.end());
+            bool moved = false;
+            for (int j : prop_changed) {
+                tree.push_back({path, j, cur_lb[j], cur_ub[j]});
+                path = (int)tree.size() - 1;
+                if (!S.art[j] || std::isfinite(root_lb[j])) S.lb[j] = cur_lb[j];
+                if (!S.art[j] || std::isfinite(root_ub[j])) S.ub[j] = cur_ub[j];
+                if (S.st[j] != BASIC) moved = true;
+            }
+            if (moved && recompute) S.compute_xB();
+            return true;
+        };
         double cur_bound = S.objective();
         bool have_node = true;       // the LP in S is the current node (root)
         int pc_var = -1, pc_dir = 0; double pc_frac = 0, pc_parent = 0;
@@ -1186,6 +1611,7 @@ struct Solver {
                 path = nd->leaf;
                 pc_var = nd->branch_var; pc_dir = nd->dir; pc_frac = nd->frac; pc_parent = nd->parent_obj;
                 delete nd;
+                if (!run_propagation(pc_var, false)) { ++nodes; have_node = false; continue; }
                 if (!S.refactor_full()) { status = 5; break; }
                 Result rr = S.dual();
                 ++nodes;
@@ -1205,7 +1631,7 @@ struct Solver {
             if (Clock::now() > S.t_end) { status = 3; break; }
             if (nodes >= opt.node_limit) { status = 4; break; }
             if (cur_bound >= cutoff()) { have_node = false; continue; }
-            int bv = most_fractional_or_pc(cur_bound);
+            int bv = (opt.features & 8) ? reliability_branch(cur_bound) : most_fractional_or_pc(cur_bound);
             if (bv < 0) {
                 std::vector<double> xs(S.x.begin(), S.x.begin() + M.n);
                 try_incumbent(xs);
@@ -1213,6 +1639,7 @@ struct Solver {
                 continue;
             }
             if ((nodes & 15) == 0) rounding_heuristic();
+            if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
             if (opt.verbose && (nodes % 2000) == 0) {
                 double gb = global_bound();
                 std::printf("  nodes %8ld  open %7zu  incumbent %.10g  bound %.10g  %.1fs\n", nodes, heap.size(),
@@ -1237,6 +1664,7 @@ struct Solver {
             if (first < 0) { cur_ub[bv] = dn; S.ub[bv] = dn; tree.push_back({path, bv, olb, dn}); }
             else { cur_lb[bv] = up; S.lb[bv] = up; tree.push_back({path, bv, up, oub}); }
             path = (int)tree.size() - 1;
+            if (!run_propagation(bv, true)) { ++nodes; have_node = false; continue; }
             double parent = cur_bound;
             Result rr = S.dual();
             ++nodes;
@@ -1270,7 +1698,7 @@ struct Solver {
 }  // namespace sm
 
 // ---------------------------------------------------------------------------------------------- C ABI
-// opts: [time_limit, node_limit, cut_rounds, verbose, gap]
+// opts: [time_limit, node_limit, cut_rounds, verbose, gap, features (see Options)]
 // info: [obj, bound, gap, nodes, lp_iters, time, cuts, root_bound, root_bound_after_cuts]
 // return: 0 optimal, 1 infeasible, 2 unbounded, 3 time limit (with solution), 4 node limit (with solution),
 //         5 numerical failure, 6 limit reached without a feasible solution
@@ -1302,6 +1730,7 @@ SM_API int sm_solve(int n, int m, const int* colptr, const int* rowidx, const do
     s.opt.cut_rounds = (int)opts[2];
     s.opt.verbose = (int)opts[3];
     s.opt.gap = opts[4];
+    s.opt.features = (int)opts[5];
     sm::Info info;
     std::vector<double> x;
     int status = s.solve(info, x);
