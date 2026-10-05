@@ -115,22 +115,33 @@ struct Model {
 // (r_i - 1)(c_j - 1) among entries with |a_ij| >= u * max_k |a_ik| (threshold pivoting relative to the row,
 // which bounds the entries of U by 1/u times their pivot; the row maxima are cached, so the search stays
 // cheap on dense kernels). The result is  E B = U  with E the product of the elimination steps (L) and U
-// upper triangular in pivot order. Each later basis change is appended as a product-form eta vector.
+// upper triangular in the step order `order`.
+// A basis change is a Forrest-Tomlin update: the entering column transformed by E and the row etas (the spike)
+// replaces its column of U, the row of that step moves to the end of the order, and the entries of that row
+// which now lie left of the diagonal are eliminated by one row eta. U stays sparse; only short row etas pile up.
 struct Factor {
     int m = 0, rank = 0;
     double u = 0.1, abs_tol = 1e-9;     // the model is scaled: entries are O(1)
     bool symmetric = false;             // SPD matrix: diagonal pivots only (minimum-degree order, LDL')
-    std::vector<int> prow, pcol;
-    std::vector<int> lstart, lidx;           // L step t: x[lidx] -= lval * x[prow[t]]
+    std::vector<int> prow, pcol;        // step t: pivot row and basis column
+    std::vector<int> rstep, cstep;      // step of each row / basis column
+    std::vector<int> order, pos;        // triangular order of the steps (changed by updates) and its inverse
+    std::vector<int> lstart, lidx;      // L step t: x[lidx] -= lval * x[prow[t]]
     std::vector<double> lval;
-    std::vector<int> ustart, uidx;           // U row t: diagonal udiag[t] at column pcol[t], others (column, value)
-    std::vector<double> uval, udiag;
-    std::vector<int> ucstart, ucrow;         // U by columns (for FTRAN): column c holds (pivot row, value)
-    std::vector<double> ucval;
-    std::vector<int> epos, estart, eidx;     // eta file: pivot position, pivot value, other (position, value)
-    std::vector<double> epiv, eval;
+    std::vector<double> udiag;          // U: diagonal of step t (row prow[t], column pcol[t])
+    std::vector<std::vector<std::pair<int, double>>> urow;   // step t: off-diagonal entries (column, value)
+    std::vector<std::vector<std::pair<int, double>>> ucol;   // column c: off-diagonal entries (step, value)
+    std::vector<int> epos, estart, eidx;     // row etas: x[epos] -= sum eval * x[eidx]  (row indices)
+    std::vector<double> eval;
     std::vector<int> bad_rows, bad_cols;     // unpivoted rows / columns when B is singular
-    std::vector<double> work;
+    std::vector<double> work, spike, fwork;
+    long u_nnz = 0, u_nnz0 = 0;              // off-diagonal entries of U: now / right after the factorisation
+    double last_cost = 0.0;                  // work of the last factorisation, in entry operations (about 0.55 ns
+                                             // each) plus 700 per row for its list set-up; deterministic, unlike
+                                             // a timer, so runs repeat exactly
+    bool stale = false;                      // an update failed: refactorise before the next solve
+    bool refresh = false;                    // an update lost accuracy: refactorise soon
+    double grow_tol = 1e-9, mult_tol = 1e4;  // ... when the diagonal check or a row-eta multiplier exceeds these
 
     struct Buckets {                         // objects linked into doubly linked lists by their count
         std::vector<int> head, next, prev;
@@ -146,36 +157,43 @@ struct Factor {
         }
     };
 
+    static void remove_entry(std::vector<std::pair<int, double>>& v, int key) {
+        for (size_t s = 0; s < v.size(); ++s)
+            if (v[s].first == key) { v[s] = v.back(); v.pop_back(); return; }
+    }
+
     // B given column-wise (bs, bi, bv). Returns false if B is singular; bad_cols / bad_rows then pair up the
     // basis columns and rows that could not be pivoted.
-    double last_seconds = 0.0;               // time of the last factorisation (refactorisation trigger)
-
     bool factor(int m_, const std::vector<int>& bs, const std::vector<int>& bi, const std::vector<double>& bv) {
-        auto t_start = Clock::now();
-        struct Timer { Clock::time_point t; double& out; ~Timer() { out = seconds_since(t); } } timer{t_start, last_seconds};
-        m = m_; rank = 0;
+        m = m_; rank = 0; stale = refresh = false;
+        double ops = (double)bs[m_] + 4.0 * m_;
         prow.clear(); pcol.clear(); lstart.assign(1, 0); lidx.clear(); lval.clear();
-        ustart.assign(1, 0); uidx.clear(); uval.clear(); udiag.clear();
-        epos.clear(); estart.assign(1, 0); eidx.clear(); epiv.clear(); eval.clear();
+        udiag.clear(); urow.clear();
+        epos.clear(); estart.assign(1, 0); eidx.clear(); eval.clear();
         bad_rows.clear(); bad_cols.clear();
+        rstep.assign(m, -1); cstep.assign(m, -1);
         // active submatrix: values stored by rows, patterns by columns (rows already pivoted are skipped)
         std::vector<std::vector<std::pair<int, double>>> R(m);
         std::vector<std::vector<int>> C(m);
         for (int c = 0; c < m; ++c)
             for (int t = bs[c]; t < bs[c + 1]; ++t)
                 if (bv[t] != 0.0) { R[bi[t]].push_back({c, bv[t]}); C[c].push_back(bi[t]); }
-        std::vector<int> rcnt(m), ccnt(m), rstep(m, -1), cstep(m, -1), mark(m, -1);
+        std::vector<int> rcnt(m), ccnt(m), mark(m, -1);
         Buckets RB, CB;
         RB.init(m); CB.init(m);
         for (int i = 0; i < m; ++i) { rcnt[i] = (int)R[i].size(); RB.add(i, rcnt[i]); }
         for (int c = 0; c < m; ++c) { ccnt[c] = (int)C[c].size(); CB.add(c, ccnt[c]); }
         auto value = [&](int i, int c) {
-            for (auto& e : R[i]) if (e.first == c) return e.second;
+            for (auto& e : R[i]) {
+                ops += 1.0;
+                if (e.first == c) return e.second;
+            }
             return 0.0;
         };
         std::vector<double> rmax(m, -1.0);      // cached largest |entry| of each active row (-1: recompute)
         auto rowmax = [&](int i) {
             if (rmax[i] < 0.0) {
+                ops += (double)R[i].size();
                 double mx = 0.0;
                 for (auto& e : R[i]) mx = std::max(mx, std::fabs(e.second));
                 rmax[i] = mx;
@@ -189,6 +207,7 @@ struct Factor {
             double bestv = 0.0;
             auto consider = [&](int i, int c, double v) {
                 double a = std::fabs(v);
+                ops += 1.0;
                 if (symmetric ? (i != c || a < abs_tol) : (a < abs_tol || a < u * rowmax(i))) return;
                 long cost = (long)(rcnt[i] - 1) * (long)(ccnt[c] - 1);
                 if (cost < best || (cost == best && a > bestv)) { best = cost; P = i; Q = c; bestv = a; }
@@ -216,11 +235,13 @@ struct Factor {
                 if (rstep[i] >= 0) continue;
                 RB.remove(i, rcnt[i]);
                 std::vector<std::pair<int, double>>& Ri = R[i];
+                ops += (double)Ri.size();
                 double a = 0.0;
                 for (size_t s = 0; s < Ri.size(); ++s)
                     if (Ri[s].first == Q) { a = Ri[s].second; Ri[s] = Ri.back(); Ri.pop_back(); break; }
                 if (a != 0.0) {
                     double l = a / piv;
+                    ops += 2.0 * (double)Ri.size() + (double)Rp.size();
                     lidx.push_back(i); lval.push_back(l);
                     for (size_t s = 0; s < Ri.size(); ++s) mark[Ri[s].first] = (int)s;
                     for (auto& e : Rp) {
@@ -241,72 +262,72 @@ struct Factor {
             lstart.push_back((int)lidx.size());
             for (auto& e : Rp) if (e.first != Q) CB.add(e.first, ccnt[e.first]);
             udiag.push_back(piv);
-            for (auto& e : Rp) if (e.first != Q) { uidx.push_back(e.first); uval.push_back(e.second); }
-            ustart.push_back((int)uidx.size());
+            remove_entry(Rp, Q);                                // the pivot row, without its pivot, is row t of U
+            urow.push_back(std::move(Rp));
             std::vector<std::pair<int, double>>().swap(Rp);
             std::vector<int>().swap(C[Q]);
             ++rank;
         }
+        last_cost = ops + 700.0 * m;
         if (rank < m) {
             for (int c = 0; c < m; ++c) if (cstep[c] < 0) bad_cols.push_back(c);
             for (int i = 0; i < m; ++i) if (rstep[i] < 0) bad_rows.push_back(i);
             return false;
         }
-        // column-wise copy of U for the scatter form of the back substitution
-        ucstart.assign(m + 1, 0);
-        for (int c : uidx) ucstart[c + 1]++;
-        for (int c = 0; c < m; ++c) ucstart[c + 1] += ucstart[c];
-        ucrow.resize(uidx.size()); ucval.resize(uidx.size());
-        std::vector<int> pos(ucstart.begin(), ucstart.end() - 1);
-        for (int s = 0; s < m; ++s)
-            for (int k = ustart[s]; k < ustart[s + 1]; ++k) {
-                int c = uidx[k];
-                ucrow[pos[c]] = prow[s]; ucval[pos[c]++] = uval[k];
-            }
+        ucol.assign(m, {});
+        u_nnz = 0;
+        for (int t = 0; t < m; ++t) {
+            for (auto& e : urow[t]) ucol[e.first].push_back({t, e.second});
+            u_nnz += (long)urow[t].size();
+        }
+        u_nnz0 = u_nnz;
+        order.resize(m); pos.resize(m);
+        for (int t = 0; t < m; ++t) { order[t] = t; pos[t] = t; }
         return true;
     }
 
-    // B x = b: on entry b is indexed by row, on exit it holds x indexed by basis position
-    void ftran(std::vector<double>& b) {
+    // B x = b: on entry b is indexed by row, on exit it holds x indexed by basis position. With save_spike the
+    // vector after L and the row etas is kept for a following replace_column.
+    void ftran(std::vector<double>& b, bool save_spike = false) {
         for (int t = 0; t < m; ++t) {
             double v = b[prow[t]];
             if (v == 0.0) continue;
             for (int k = lstart[t]; k < lstart[t + 1]; ++k) b[lidx[k]] -= lval[k] * v;
         }
+        for (size_t e = 0; e < epos.size(); ++e) {
+            double s = 0.0;
+            for (int k = estart[e]; k < estart[e + 1]; ++k) s += eval[k] * b[eidx[k]];
+            b[epos[e]] -= s;
+        }
+        if (save_spike) spike = b;
         work.assign(m, 0.0);
-        for (int t = m - 1; t >= 0; --t) {
+        for (int p = m - 1; p >= 0; --p) {
+            int t = order[p];
             double v = b[prow[t]];
             if (v == 0.0) continue;
             int c = pcol[t];
             double xc = v / udiag[t];
             work[c] = xc;
-            for (int k = ucstart[c]; k < ucstart[c + 1]; ++k) b[ucrow[k]] -= ucval[k] * xc;
-        }
-        for (size_t e = 0; e < epos.size(); ++e) {
-            int r = epos[e];
-            double xr = work[r] / epiv[e];
-            work[r] = xr;
-            if (xr != 0.0)
-                for (int k = estart[e]; k < estart[e + 1]; ++k) work[eidx[k]] -= eval[k] * xr;
+            for (auto& e : ucol[c]) b[prow[e.first]] -= e.second * xc;
         }
         b.swap(work);
     }
 
     // B' y = d: on entry d is indexed by basis position, on exit it holds y indexed by row
     void btran(std::vector<double>& d) {
-        for (int e = (int)epos.size() - 1; e >= 0; --e) {
-            int r = epos[e];
-            double s = d[r];
-            for (int k = estart[e]; k < estart[e + 1]; ++k) s -= eval[k] * d[eidx[k]];
-            d[r] = s / epiv[e];
-        }
         work.assign(m, 0.0);
-        for (int t = 0; t < m; ++t) {
+        for (int p = 0; p < m; ++p) {
+            int t = order[p];
             double v = d[pcol[t]];
             if (v == 0.0) continue;
             double wt = v / udiag[t];
             work[prow[t]] = wt;
-            for (int k = ustart[t]; k < ustart[t + 1]; ++k) d[uidx[k]] -= uval[k] * wt;
+            for (auto& e : urow[t]) d[e.first] -= e.second * wt;
+        }
+        for (int e = (int)epos.size() - 1; e >= 0; --e) {
+            double v = work[epos[e]];
+            if (v == 0.0) continue;
+            for (int k = estart[e]; k < estart[e + 1]; ++k) work[eidx[k]] -= eval[k] * v;
         }
         for (int t = m - 1; t >= 0; --t) {
             double s = 0.0;
@@ -316,16 +337,63 @@ struct Factor {
         d.swap(work);
     }
 
-    // basis position r now holds a column with B^-1 a = alpha (alpha indexed by basis position)
-    void add_eta(int r, const std::vector<double>& alpha) {
-        epos.push_back(r); epiv.push_back(alpha[r]);
-        for (int k = 0; k < m; ++k)
-            if (k != r && std::fabs(alpha[k]) > 1e-14) { eidx.push_back(k); eval.push_back(alpha[k]); }
-        estart.push_back((int)eidx.size());
+    // Forrest-Tomlin update: basis position r takes the column of the last ftran(..., save_spike = true), whose
+    // entry r of B^-1 a is alpha_r. Returns false if the update is not numerically safe; the factorisation is
+    // then unusable (stale) until the next factor().
+    bool replace_column(int r, double alpha_r) {
+        stale = true;
+        int tr = cstep[r];
+        double old_diag = udiag[tr];
+        for (auto& e : ucol[r]) remove_entry(urow[e.first], r);      // the old column r leaves U
+        u_nnz -= (long)ucol[r].size();
+        ucol[r].clear();
+        double d0 = 0.0;                                               // the spike becomes column r
+        for (int i = 0; i < m; ++i) {
+            double v = spike[i];
+            if (std::fabs(v) < 1e-14) continue;
+            int k = rstep[i];
+            if (k == tr) { d0 = v; continue; }
+            urow[k].push_back({r, v});
+            ucol[r].push_back({k, v});
+            ++u_nnz;
+        }
+        // row tr moves to the end of the order: eliminate its entries in the columns of the later steps
+        fwork.assign(m, 0.0);
+        for (auto& e : urow[tr]) { fwork[e.first] = e.second; remove_entry(ucol[e.first], tr); }
+        u_nnz -= (long)urow[tr].size();
+        urow[tr].clear();
+        fwork[r] = d0;
+        size_t first = eidx.size();
+        double mmax = 0.0;
+        for (int p = pos[tr] + 1; p < m; ++p) {
+            int k = order[p], ck = pcol[k];
+            double v = fwork[ck];
+            if (v == 0.0) continue;
+            fwork[ck] = 0.0;
+            if (std::fabs(v) < 1e-14) continue;
+            double mk = v / udiag[k];
+            mmax = std::max(mmax, std::fabs(mk));
+            eidx.push_back(prow[k]); eval.push_back(mk);
+            for (auto& e : urow[k]) fwork[e.first] -= mk * e.second;
+        }
+        if (eidx.size() > first) { epos.push_back(prow[tr]); estart.push_back((int)eidx.size()); }
+        double dnew = fwork[r], expect = old_diag * alpha_r;
+        // the determinant says dnew = old_diag * alpha_r; a large difference means cancellation in the update
+        double check = std::fabs(dnew - expect) / std::max(std::fabs(dnew), std::fabs(expect));
+        if (!(std::fabs(dnew) > 1e-11) || !(check <= 1e-6)) return false;
+        if (check > grow_tol || mmax > mult_tol) refresh = true;
+        udiag[tr] = dnew;
+        int p0 = pos[tr];
+        order.erase(order.begin() + p0);
+        order.push_back(tr);
+        for (int p = p0; p < m; ++p) pos[order[p]] = p;
+        stale = false;
+        return true;
     }
 
-    long nnz() const { return (long)lidx.size() + (long)uidx.size() + m; }
-    long eta_nnz() const { return (long)eidx.size() + (long)epos.size(); }
+    long nnz() const { return (long)lidx.size() + u_nnz + m; }
+    // work added by the updates since the factorisation: row-eta entries and growth of U
+    long eta_nnz() const { return (long)eidx.size() + (long)epos.size() + std::max(0L, u_nnz - u_nnz0); }
 };
 
 // ---------------------------------------------------------------------------------------------- simplex
@@ -345,12 +413,15 @@ struct Simplex {
     Factor F;
     long iters = 0;
     int since_refactor = 0;
-    double eta_work = 0.0;                           // eta entries processed by the solves since the last refactor
+    double eta_work = 0.0;                           // update entries processed by the solves since the refactor
 
-    // Refactorise every opt.refactor iterations, or earlier once the solves have spent more time on the growing
-    // eta file than one factorisation costs (dense updates on large degenerate LPs)
+    // Refactorise after opt.refactor updates (more on large bases, where a factorisation costs more than many
+    // Forrest-Tomlin updates), earlier once the solves have spent more work on the updates than one
+    // factorisation costs (an update entry costs about 2.7 factorisation operations), and at once when an
+    // update failed or lost accuracy
     bool want_refactor() const {
-        return since_refactor >= opt.refactor || (since_refactor >= 8 && eta_work * 1.5e-9 > F.last_seconds);
+        return F.stale || F.refresh || since_refactor >= std::max(opt.refactor, std::min(1000, m / 50)) ||
+               (since_refactor >= 8 && 2.7 * eta_work > F.last_cost);
     }
     double big = 1e7;
     Clock::time_point t_end;
@@ -546,7 +617,7 @@ struct Simplex {
     void col_alpha(int q) {
         acol.assign(m, 0.0);
         col(q, [&](int i, double v) { acol[i] += v; });
-        F.ftran(acol);
+        F.ftran(acol, true);
     }
 
     // bounded dual simplex from a dual feasible basis
@@ -647,7 +718,7 @@ struct Simplex {
                 w[k] = std::max(w[k] - 2.0 * g * tau[k] + g * g * wr, 1e-12);
             }
             w[r] = std::max(wr / (alr * alr), 1e-12);
-            F.add_eta(r, acol);
+            F.replace_column(r, acol[r]);         // a failed update leaves F stale: refactorised next
             eta_work += 3.0 * F.eta_nnz();
             ++iters; ++since_refactor;
         }
@@ -758,7 +829,7 @@ struct Simplex {
             st[jl] = leave_lb ? AT_LB : AT_UB;
             st[q] = BASIC;
             head[r] = q;
-            F.add_eta(r, acol);
+            F.replace_column(r, acol[r]);         // a failed update leaves F stale: refactorised next
             eta_work += 3.0 * F.eta_nnz();
             ++iters; ++since_refactor;
         }
@@ -1765,12 +1836,13 @@ struct Solver {
         }
         info.root_bound = S.objective();
         if (!has_int) {
-            // polish: re-solve from the optimal basis with tolerances 100x tighter; keep the first answer if the
-            // tight pass does not finish cleanly (ill-conditioned models)
+            // polish: re-solve from the optimal basis with tolerances 100x tighter, and confirm the result on a
+            // fresh factorisation (the primal values then come from one solve, not from the updates); keep the
+            // first answer if the tight pass does not finish cleanly (ill-conditioned models)
             xout.assign(S.x.begin(), S.x.begin() + M.n);
             double obj = S.objective();
             S.opt.tol_p = S.opt.tol_d = 1e-9;
-            if (S.refactor_full() && S.dual() == OPTIMAL) {
+            if (S.refactor_full() && S.dual() == OPTIMAL && (S.since_refactor == 0 || S.solve() == OPTIMAL)) {
                 xout.assign(S.x.begin(), S.x.begin() + M.n);
                 obj = S.objective();
             }
@@ -2071,19 +2143,38 @@ SM_API long sm_lu_nnz(void* handle) { return static_cast<sm::Factor*>(handle)->n
 
 SM_API void sm_lu_free(void* handle) { delete static_cast<sm::Factor*>(handle); }
 
-// Test hook for the sparse LU (tests/test_samadhan.py). Factorises the m x m CSC matrix B; if r >= 0 the basis
-// column r is then replaced by the dense column `newcol` through an eta update. Solves B x = b and B' y = d in
-// place. Returns the rank of the original B (the solves are skipped when it is singular).
-SM_API int sm_lu_check(int m, const int* colptr, const int* rowidx, const double* vals, int r, const double* newcol,
-                       double* b, double* d) {
+// Test hook for the sparse LU (tests/test_samadhan.py). Factorises the m x m CSC matrix B, then replaces the
+// basis columns rs[0..k-1] one after another by the dense columns newcols[t*m .. t*m+m-1] through Forrest-Tomlin
+// updates, refactorising whenever an update fails or asks for it (as the simplex does), and solves B x = b and
+// B' y = d in place. Returns the rank of the original B (the solves are skipped when it is singular) and the
+// number of refactorisations in counts[0], of updates refused as unstable in counts[1].
+SM_API int sm_lu_check(int m, const int* colptr, const int* rowidx, const double* vals, int k, const int* rs,
+                       const double* newcols, double* b, double* d, int* counts) {
     sm::Factor F;
     std::vector<int> bs(colptr, colptr + m + 1), bi(rowidx, rowidx + colptr[m]);
     std::vector<double> bv(vals, vals + colptr[m]);
+    counts[0] = counts[1] = 0;
     if (!F.factor(m, bs, bi, bv)) return F.rank;
-    if (r >= 0) {
-        std::vector<double> alpha(newcol, newcol + m);
-        F.ftran(alpha);
-        F.add_eta(r, alpha);
+    std::vector<std::vector<std::pair<int, double>>> cols(m);
+    for (int c = 0; c < m; ++c)
+        for (int t = bs[c]; t < bs[c + 1]; ++t) cols[c].push_back({bi[t], bv[t]});
+    for (int t = 0; t < k; ++t) {
+        const double* a = newcols + (size_t)t * m;
+        int r = rs[t];
+        cols[r].clear();
+        for (int i = 0; i < m; ++i) if (a[i] != 0.0) cols[r].push_back({i, a[i]});
+        std::vector<double> alpha(a, a + m);
+        F.ftran(alpha, true);
+        if (!F.replace_column(r, alpha[r])) counts[1]++;
+        if (F.stale || F.refresh) {
+            bs.assign(1, 0); bi.clear(); bv.clear();
+            for (int c = 0; c < m; ++c) {
+                for (auto& e : cols[c]) { bi.push_back(e.first); bv.push_back(e.second); }
+                bs.push_back((int)bi.size());
+            }
+            if (!F.factor(m, bs, bi, bv)) return -1;
+            counts[0]++;
+        }
     }
     std::vector<double> x(b, b + m), y(d, d + m);
     F.ftran(x);

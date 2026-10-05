@@ -286,7 +286,7 @@ def test_sparse_lu_symmetric_mode():
 
 
 def test_sparse_lu_matches_numpy():
-    """C++ sparse LU: solves with B and B', a product-form column replacement, and rank detection."""
+    """C++ sparse LU: solves with B and B', chains of Forrest-Tomlin column replacements, and rank detection."""
     import numpy as np
     import scipy.sparse as sp
 
@@ -297,6 +297,16 @@ def test_sparse_lu_matches_numpy():
         return np.linalg.norm(A @ v - rhs, np.inf) <= 1e-10 * len(rhs) * (
             np.linalg.norm(A, np.inf) * np.linalg.norm(v, np.inf) + np.linalg.norm(rhs, np.inf))
 
+    def new_column(m):                                   # dense, sparse, or a logical column
+        kind = rng.integers(3)
+        if kind == 0:
+            return rng.normal(size=m)
+        col = np.zeros(m)
+        k = 1 if kind == 2 else int(rng.integers(1, max(1, m // 4) + 1))
+        col[rng.choice(m, size=k, replace=False)] = -1.0 if kind == 2 else rng.normal(size=k)
+        return col
+
+    updates = refactors = 0
     for _ in range(150):
         m = int(rng.integers(1, 40))
         B = sp.random(m, m, density=rng.uniform(0.05, 0.4), random_state=rng).toarray()
@@ -306,17 +316,25 @@ def test_sparse_lu_matches_numpy():
                 B[rng.integers(m), j] = -1.0
         B += np.diag(rng.normal(size=m)) * (rng.random(m) < 0.7)
         b, d = rng.normal(size=m), rng.normal(size=m)
-        rank, x, y = lu_check(B, b, d)
+        rank, x, y, _ = lu_check(B, b, d)
         if np.linalg.matrix_rank(B) < m:
             assert rank < m
             continue
         assert rank == m and backward_ok(B, x, b) and backward_ok(B.T, y, d)
-        r, col = int(rng.integers(m)), rng.normal(size=m)
-        B2 = B.copy()
-        B2[:, r] = col
-        if np.linalg.cond(B2) < 1e8:
-            _, x2, y2 = lu_check(B, b, d, replace=(r, col))
-            assert backward_ok(B2, x2, b) and backward_ok(B2.T, y2, d)
+        # a chain of basis changes, each keeping the basis well conditioned (as the simplex ratio test does)
+        B2, chain = B.copy(), []
+        for _ in range(int(rng.integers(1, 3 * m + 2))):
+            r, col = int(rng.integers(m)), new_column(m)
+            Bt = B2.copy()
+            Bt[:, r] = col
+            if np.linalg.cond(Bt) < 1e6:
+                B2 = Bt
+                chain.append((r, col))
+        rank, x2, y2, (refs, _) = lu_check(B, b, d, replace=chain)
+        assert rank == m and backward_ok(B2, x2, b) and backward_ok(B2.T, y2, d)
+        updates += len(chain)
+        refactors += refs
+    assert updates > 1000 and refactors <= updates // 10   # the update rarely gives up
 
 
 def test_cli_routes_milp_to_core(capsys):

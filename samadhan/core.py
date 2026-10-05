@@ -75,7 +75,8 @@ def _load():
     lib.sm_lu_free.argtypes = [ctypes.c_void_p]
     lib.sm_lu_check.restype = ctypes.c_int
     lib.sm_lu_check.argtypes = [ctypes.c_int, P(ctypes.c_int), P(ctypes.c_int), P(ctypes.c_double), ctypes.c_int,
-                                P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double)]
+                                P(ctypes.c_int), P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double),
+                                P(ctypes.c_int)]
     _lib = lib
     return lib
 
@@ -117,21 +118,25 @@ class SparseLU:
             self._h = None
 
 
-def lu_check(B, b, d, replace=None):
-    """Test hook for the C++ sparse LU: returns (rank, x, y) with B x = b and B' y = d. With replace=(r, col)
-    column r of B is first replaced through a product-form (eta) update."""
+def lu_check(B, b, d, replace=()):
+    """Test hook for the C++ sparse LU: returns (rank, x, y, counts) with B x = b and B' y = d. replace is a list
+    of (r, col): column r of B is replaced by col, one after another, through Forrest-Tomlin updates of the
+    factorisation, refactorising when an update fails or loses accuracy; counts = (refactorisations, updates
+    refused as unstable)."""
     lib = _load()
     A = sp.csc_matrix(B, dtype=np.float64)
     A.sum_duplicates(); A.sort_indices()
     m = A.shape[0]
-    r, col = replace if replace is not None else (-1, np.zeros(m))
+    rs = np.ascontiguousarray([r for r, _ in replace] or [0], np.int32)
+    cols = np.ascontiguousarray(np.concatenate([np.asarray(c, np.float64) for _, c in replace])
+                                if replace else np.zeros(m), np.float64)
     cp, ri = np.ascontiguousarray(A.indptr, np.int32), np.ascontiguousarray(A.indices, np.int32)
-    v, col = np.ascontiguousarray(A.data, np.float64), np.ascontiguousarray(col, np.float64)
+    v = np.ascontiguousarray(A.data, np.float64)
     x, y = np.array(b, np.float64), np.array(d, np.float64)
-    dp = lambda a: a.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
-    ip = lambda a: a.ctypes.data_as(ctypes.POINTER(ctypes.c_int))
-    rank = lib.sm_lu_check(m, ip(cp), ip(ri), dp(v), r, dp(col), dp(x), dp(y))
-    return rank, x, y
+    counts = np.zeros(2, np.int32)
+    rank = lib.sm_lu_check(m, _ip(cp), _ip(ri), _dp(v), len(replace), _ip(rs), _dp(cols), _dp(x), _dp(y),
+                           _ip(counts))
+    return rank, x, y, tuple(int(c) for c in counts)
 
 
 @dataclass
