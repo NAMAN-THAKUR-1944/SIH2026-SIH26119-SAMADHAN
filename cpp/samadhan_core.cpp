@@ -1037,7 +1037,8 @@ struct Solver {
             xkeep = S.x;
             S.opt.tol_p = S.opt.tol_d = 1e-9;
             S.opt.max_lp_iter = S.iters + std::max(5000L, (long)S.m + S.n);
-            if (!(S.refactor_full() && S.dual() == OPTIMAL)) S.x = xkeep;
+            if (!(S.refactor_full() && S.dual() == OPTIMAL && (S.since_refactor == 0 || S.solve() == OPTIMAL)))
+                S.x = xkeep;
             S.opt = opt;
         }
         if (opt.verbose)
