@@ -185,9 +185,9 @@ def _mehrotra(A, b, c, u, free, tol, max_iter, time_limit, verbose):
         if not np.isfinite(mu) or np.abs(x).max() > 1e30:
             status = "infeasible" if best > 1e-3 else "stalled"   # iterates diverge
             break
-        if it - best_it >= 15:
-            status = "stalled"                                     # no progress: the best point goes on
-            break
+        if (it - best_it >= 15 and best < 1e-4) or (it - best_it >= 30 and best < 1e-2):
+            status = "stalled"           # no progress close to the optimum: the best point goes on to crossover
+            break                        # (early on the gap can grow while the residuals fall: keep iterating)
         theta_inv = np.full(n, rho)
         theta_inv[N] = z[N] / x[N]
         theta_inv[B] += v / w

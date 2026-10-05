@@ -41,7 +41,7 @@ below, and are stored in [`results/`](results).
 | | What | Result |
 |---|---|---|
 | **LP** | Refinery planning LP, 1.16 M variables | **5.1× faster** than HiGHS at 1e-6 (cost within 0.0002 %), **22×** at 1e-4 |
-| **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 88/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
+| **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
 | **MILP** | MIPLIB 3 (all 65 models, 60 s) | **41 proved optimal**, all correct, and a feasible solution on 61; 3 of them HiGHS could not finish (nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
 | **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 4 proved optimal, all correct, and a feasible solution on 33; HiGHS proves 18 and finds a solution on all 50; on 5 models SAMADHAN's solution is the better one |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
@@ -142,7 +142,7 @@ the faster of its dual simplex and interior point; SAMADHAN with the faster of i
 | Engine | Solved | Accuracy | Time |
 |---|---:|---|---|
 | C++ dual simplex (presolve, sparse LU) | **91 / 91** | exact vertices, all within 1e-9 of the HiGHS optimum (worst 2e-10) | median 0.012 s (HiGHS 0.008 s), 29 s for all 91, faster than HiGHS on 9 |
-| Interior point + crossover | 88 / 91 | exact vertices, 87 within 1e-9, scsd1 within 1.4e-9 | median 21 iterations, 0.09 s; dfl001 and fit2p time out at 120 s (dense normal equations), pilot4 stalls |
+| Interior point + crossover | 89 / 91 | exact vertices, all within 1e-9 (worst 1e-10) | median 21 iterations, 0.12 s; dfl001 and fit2p time out at 120 s (dense normal equations) |
 | GPU engine, CPU mode, 1e-4 KKT | 86 / 91 | 80 within 0.1 % | median 1.7 s |
 
 The simplex and the interior-point method also solve the five models the first-order engine cannot (bnl1,
