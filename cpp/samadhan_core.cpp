@@ -148,7 +148,11 @@ struct Factor {
 
     // B given column-wise (bs, bi, bv). Returns false if B is singular; bad_cols / bad_rows then pair up the
     // basis columns and rows that could not be pivoted.
+    double last_seconds = 0.0;               // time of the last factorisation (refactorisation trigger)
+
     bool factor(int m_, const std::vector<int>& bs, const std::vector<int>& bi, const std::vector<double>& bv) {
+        auto t_start = Clock::now();
+        struct Timer { Clock::time_point t; double& out; ~Timer() { out = seconds_since(t); } } timer{t_start, last_seconds};
         m = m_; rank = 0;
         prow.clear(); pcol.clear(); lstart.assign(1, 0); lidx.clear(); lval.clear();
         ustart.assign(1, 0); uidx.clear(); uval.clear(); udiag.clear();
@@ -321,6 +325,7 @@ struct Factor {
     }
 
     long nnz() const { return (long)lidx.size() + (long)uidx.size() + m; }
+    long eta_nnz() const { return (long)eidx.size() + (long)epos.size(); }
 };
 
 // ---------------------------------------------------------------------------------------------- simplex
@@ -340,6 +345,13 @@ struct Simplex {
     Factor F;
     long iters = 0;
     int since_refactor = 0;
+    double eta_work = 0.0;                           // eta entries processed by the solves since the last refactor
+
+    // Refactorise every opt.refactor iterations, or earlier once the solves have spent more time on the growing
+    // eta file than one factorisation costs (dense updates on large degenerate LPs)
+    bool want_refactor() const {
+        return since_refactor >= opt.refactor || (since_refactor >= 8 && eta_work * 1.5e-9 > F.last_seconds);
+    }
     double big = 1e7;
     Clock::time_point t_end;
 
@@ -491,6 +503,7 @@ struct Simplex {
         make_dual_feasible();
         exact_weights(false);
         since_refactor = 0;
+        eta_work = 0.0;
         return true;
     }
 
@@ -540,7 +553,7 @@ struct Simplex {
     Result dual() {
         int boxes_grown = 0;
         for (;;) {
-            if (since_refactor >= opt.refactor && !refactor_full()) return NUMERIC;
+            if (want_refactor() && !refactor_full()) return NUMERIC;
             if (Clock::now() > t_end) return TIME_LIMIT;
             if (iters >= opt.max_lp_iter) return ITER_LIMIT;
             // pricing: dual steepest edge
@@ -635,6 +648,7 @@ struct Simplex {
             }
             w[r] = std::max(wr / (alr * alr), 1e-12);
             F.add_eta(r, acol);
+            eta_work += 3.0 * F.eta_nnz();
             ++iters; ++since_refactor;
         }
     }
@@ -659,6 +673,7 @@ struct Simplex {
         compute_xB();
         compute_duals();
         since_refactor = 0;
+        eta_work = 0.0;
         return true;
     }
 
@@ -674,7 +689,7 @@ struct Simplex {
     Result primal() {
         wp.assign(N, 1.0);
         for (;;) {
-            if (since_refactor >= opt.refactor && !refactor_basis()) return NUMERIC;
+            if (want_refactor() && !refactor_basis()) return NUMERIC;
             if (Clock::now() > t_end) return TIME_LIMIT;
             if (iters >= opt.max_lp_iter) return ITER_LIMIT;
             int q = -1; double best = 0.0;
@@ -744,6 +759,7 @@ struct Simplex {
             st[q] = BASIC;
             head[r] = q;
             F.add_eta(r, acol);
+            eta_work += 3.0 * F.eta_nnz();
             ++iters; ++since_refactor;
         }
     }
