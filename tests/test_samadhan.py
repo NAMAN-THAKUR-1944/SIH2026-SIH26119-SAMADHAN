@@ -171,13 +171,36 @@ def test_presolve_reductions():
     P = presolve(lp)
     st = P.stats
     assert P.status == "reduced" and st["fixed_cols"] >= 1 and st["singleton_rows"] >= 1
-    assert st["redundant_rows"] >= 1 and st["forcing_rows"] >= 1 and st["empty_cols"] >= 1
+    # x3, x4 (forcing row) and x5 (empty column) may instead be removed earlier by dual fixing
+    assert st["redundant_rows"] >= 1 and st["forcing_rows"] + st["empty_cols"] + st["dual_fixed"] >= 2
+    assert P.lp.K.shape[1] <= 2
     ref = solve_highs(lp)["obj"]                       # x = (2, 4, 0, 0, 0, 3): 2 + 4 - 3 = 3
     r = solve_highs(P.lp)
     assert r["obj"] == pytest.approx(ref) == pytest.approx(3.0)
     from samadhan.core import solve_core
     rc = solve_core(lp)
     assert rc.status == "optimal" and rc.obj == pytest.approx(3.0) and violation(lp, rc.x) < 1e-9
+
+
+def test_presolve_free_singleton_and_dual_fixing():
+    """min x1 + x2 + 2y  s.t.  x1 + x2 - s = 3 (s in [0, 10], implied free: x in [2, 4] gives s in [1, 5]),
+    x2 + y <= 10 (y has no down-lock and cost 2: fixed at 0)  ->  x = (2, 2), s = 1, y = 0, value 4."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    from samadhan.lp import LP
+    from samadhan.presolve import presolve
+    from samadhan.verify import violation
+    K = sp.csr_matrix(np.array([[1.0, 1.0, -1.0, 0.0],     # eq: x1 + x2 - s = 3
+                                [0.0, -1.0, 0.0, -1.0]]))  # ge: -x2 - y >= -10
+    lp = LP(np.array([1.0, 1.0, 0.0, 2.0]), K, np.array([3.0, -10.0]), 1, np.array([2.0, 2.0, 0.0, 0.0]),
+            np.array([4.0, 4.0, 10.0, 5.0]))
+    P = presolve(lp)
+    assert P.stats["free_singletons"] >= 1 and P.stats["dual_fixed"] >= 1
+    from samadhan.core import solve_core
+    r = solve_core(lp)
+    assert r.status == "optimal" and r.obj == pytest.approx(4.0) and violation(lp, r.x) < 1e-9
+    assert r.x == pytest.approx([2.0, 2.0, 1.0, 0.0])
 
 
 def test_presolve_detects_infeasible():

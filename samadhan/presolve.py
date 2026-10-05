@@ -7,6 +7,10 @@ Reductions, repeated until a pass changes nothing:
   * rows whose activity bounds already satisfy them are dropped as redundant;
   * forcing rows (activity bound equal to the right-hand side) fix all their columns at a bound;
   * integer columns get tighter bounds from the rows they appear in (domain propagation);
+  * free column singletons: a continuous column in a single equality row that already implies its bounds is
+    substituted out with the row (its value is recovered from the row in postsolve);
+  * dual fixing: a column that neither its cost nor any row pushes upwards is fixed at its lower bound (and the
+    mirror case at its upper bound);
   * empty columns are fixed at the bound their cost prefers (or prove unboundedness).
 Only the primal solution is mapped back. Models with a quadratic objective are passed through unchanged.
 """
@@ -37,11 +41,15 @@ class Presolved:
     x_fixed: np.ndarray               # values of the removed columns (kept ones are overwritten by postsolve)
     stats: dict = field(default_factory=dict)
     rows: np.ndarray = field(default_factory=lambda: np.zeros(0, int))   # original indices of the kept rows
+    # substituted columns, in order: (k, b, cols, coefs, a)  means  x_k = (b - coefs . x[cols]) / a
+    stack: list = field(default_factory=list)
 
     def postsolve(self, x_reduced):
         x = self.x_fixed.copy()
         if len(self.cols):
             x[self.cols] = x_reduced
+        for k, b, cols, coefs, a in reversed(self.stack):
+            x[k] = (b - coefs @ x[cols]) / a
         return x
 
 
@@ -73,7 +81,8 @@ def presolve(lp: LP, max_passes=50) -> Presolved:
     x_fixed = np.zeros(n)
     const = lp.obj_const
     st = dict(passes=0, fixed_cols=0, empty_rows=0, singleton_rows=0, redundant_rows=0, forcing_rows=0,
-              tightened=0, empty_cols=0)
+              tightened=0, free_singletons=0, dual_fixed=0, empty_cols=0)
+    stack = []
     fail = lambda s: Presolved(s, None, np.arange(0), x_fixed, st)
 
     def fix(cols, vals):
@@ -173,6 +182,63 @@ def presolve(lp: LP, max_passes=50) -> Presolved:
                 l, u = nl, nu
                 st["tightened"] += k; changed = True
                 continue
+        # free column singletons: a continuous column that appears only in one equality row, whose other terms
+        # already imply its bounds, is substituted out together with the row:  x_k = (b - sum_j a_j x_j) / a_k
+        Scsc = S.tocsc()
+        ccnt1 = np.diff(Scsc.indptr)
+        cand = np.flatnonzero((ccnt1 == 1) & ~isint[cols])
+        done_rows = set()
+        subs = 0
+        for kl in cand:
+            p0 = Scsc.indptr[kl]
+            il, a = int(Scsc.indices[p0]), float(Scsc.data[p0])
+            i = int(rows[il])
+            if i >= lp.n_eq or not row_on[i] or il in done_rows or abs(a) < 1e-9:
+                continue
+            k = int(cols[kl])
+            lk, uk = l[k], u[k]
+            cmin = a * lk if a > 0 else a * uk
+            cmax = a * uk if a > 0 else a * lk
+            rmin_ok = mn_inf[il] - (0 if np.isfinite(cmin) else 1) == 0
+            rmax_ok = mx_inf[il] - (0 if np.isfinite(cmax) else 1) == 0
+            rest_min = mn[il] - (cmin if np.isfinite(cmin) else 0.0) if rmin_ok else -np.inf
+            rest_max = mx[il] - (cmax if np.isfinite(cmax) else 0.0) if rmax_ok else np.inf
+            b = lo[i]
+            lo_imp, hi_imp = (b - rest_max) / a, (b - rest_min) / a
+            if a < 0:
+                lo_imp, hi_imp = hi_imp, lo_imp
+            tol = 1e-9 * (1.0 + abs(b))
+            if not (lo_imp >= lk - tol and hi_imp <= uk + tol):
+                continue                                         # the column's own bounds still matter
+            r0, r1 = S.indptr[il], S.indptr[il + 1]
+            others = [(int(cols[jl]), float(v)) for jl, v in zip(S.indices[r0:r1], S.data[r0:r1]) if jl != kl]
+            ocols = np.array([j for j, _ in others], int)
+            ocoef = np.array([v for _, v in others], float)
+            if c[k] != 0.0:
+                c[ocols] -= c[k] * ocoef / a
+                const += c[k] * b / a
+            stack.append((k, b, ocols, ocoef, a))
+            col_on[k] = False
+            row_on[i] = False
+            done_rows.add(il)
+            subs += 1
+        if subs:
+            st["free_singletons"] += subs; changed = True
+            continue
+        # dual fixing: if the cost does not reward increasing a column and no row needs it larger (no down-lock),
+        # some optimal solution has it at its lower bound (and symmetrically at the upper bound)
+        T = S.tocoo()
+        eqr = rows[T.row] < lp.n_eq
+        down = np.bincount(T.col, weights=(eqr | (T.data > 0)).astype(float), minlength=len(cols))
+        up = np.bincount(T.col, weights=(eqr | (T.data < 0)).astype(float), minlength=len(cols))
+        cc, lc, uc = c[cols], l[cols], u[cols]
+        at_l = (cc >= 0) & (down == 0) & np.isfinite(lc)
+        at_u = ~at_l & (cc <= 0) & (up == 0) & np.isfinite(uc)
+        if at_l.any() or at_u.any():
+            jl, ju = cols[at_l], cols[at_u]
+            fix(np.concatenate([jl, ju]), np.concatenate([l[jl], u[ju]]))
+            st["dual_fixed"] += len(jl) + len(ju); changed = True
+            continue
         # empty columns: fix at the bound the cost prefers
         ccnt = np.diff(S.tocsc().indptr)
         ec = cols[ccnt == 0]
@@ -195,4 +261,4 @@ def presolve(lp: LP, max_passes=50) -> Presolved:
                   col_names=names, integer=isint[cols] if lp.integer is not None else None,
                   name=f"{lp.name} (presolved)")
     st.update(rows=(m, len(rows)), cols=(n, len(cols)))
-    return Presolved("reduced", red, cols, x_fixed, st, rows[order])
+    return Presolved("reduced", red, cols, x_fixed, st, rows[order], stack)
