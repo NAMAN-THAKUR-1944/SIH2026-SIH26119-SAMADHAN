@@ -85,10 +85,10 @@ def test_core_milp_matches_highs(seed):
     assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
 
 
-@pytest.mark.parametrize("features", [0, 1, 2, 4, 8, 16, 31])
+@pytest.mark.parametrize("features", [0, 1, 2, 4, 8, 16, 32, 63])
 def test_core_milp_every_feature(features):
-    """Each branch-and-cut feature (pump, diving, covers, reliability branching, propagation) on its own and all
-    together must reach the same proven optimum."""
+    """Each branch-and-cut feature (pump, diving, covers, reliability branching, propagation, c-MIR cuts) on its own
+    and all together must reach the same proven optimum."""
     from samadhan.core import solve_core
     from samadhan.verify import violation
     for seed in range(3):

@@ -14,8 +14,8 @@ HiGHS, CBC or SCIP code inside. It has three engines:
 * a **GPU engine for LP and convex QP**: restarted primal-dual hybrid gradient (PDLP / PDQP family), running
   entirely on the GPU with sparse mat-vecs and CUDA graphs;
 * a **C++17 core for LP and MILP**: presolve, a sparse LU factorisation, primal and dual simplex (exact vertex
-  solutions) and branch-and-cut (reliability branching, node domain propagation, Gomory cuts, feasibility
-  pump and diving heuristics);
+  solutions) and branch-and-cut (reliability branching, node domain propagation, Gomory and c-MIR cuts,
+  feasibility pump and diving heuristics);
 * an **interior-point method for LP** (Mehrotra predictor-corrector, normal equations factorised by the core's
   sparse LDLᵀ).
 
@@ -42,7 +42,7 @@ below, and are stored in [`results/`](results).
 |---|---|---|
 | **LP** | Refinery planning LP, 1.16 M variables | **5.1× faster** than HiGHS at 1e-6 (cost within 0.0002 %), **22×** at 1e-4 |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1.1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
-| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **39 proved optimal**, all correct, and a feasible solution on 59; 3 of them HiGHS could not finish (nw04, pk1, qiu); faster than HiGHS on 13; HiGHS proves 50 |
+| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **40 proved optimal**, all correct, and a feasible solution on 61; 2 of them HiGHS could not finish (nw04, pk1); faster than HiGHS on 16; HiGHS proves 50 |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
@@ -176,25 +176,26 @@ exactly from that point:
 ![MIPLIB](docs/img/miplib.png)
 
 All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves
-39 optimal**, every one matching the known optimum, and finds a feasible solution on **59 of 65**; HiGHS proves 50.
-SAMADHAN finishes **nw04 (87,482 columns), pk1 and qiu** where HiGHS runs out of time, and is faster than HiGHS
-on 13 models, for example air03 (0.1 s vs 2.8 s), gesa3 (1.4 s vs 3.4 s), cap6000 (0.5 s vs 2.0 s) and rentacar
-(4.7 s vs 10.4 s).
+40 optimal**, every one matching the known optimum, and finds a feasible solution on **61 of 65**; HiGHS proves 50.
+SAMADHAN finishes **nw04 (87,482 columns) and pk1** where HiGHS runs out of time, and is faster than HiGHS on 16
+models, for example air03 (0.1 s vs 2.8 s), gesa3 (1.2 s vs 3.4 s), cap6000 (0.6 s vs 2.0 s), mod008 (0.2 s vs
+1.2 s) and rentacar (4.3 s vs 10.4 s).
 
 How it got here, each step measured on the same models:
 
-| Version | Models run | Proved optimal | With a feasible solution |
-|---|---:|---:|---:|
-| Dense basis inverse (first prototype) | 58 | 26 | — |
-| Sparse LU, scaling, presolve | 65 | 40 | 56 |
-| + feasibility pump, diving, reliability branching, node propagation | 65 | 39 | 59 |
+| Version | Models run | Proved optimal | With a feasible solution | Shifted geo-mean time |
+|---|---:|---:|---:|---:|
+| Dense basis inverse (first prototype) | 58 | 26 | — | — |
+| Sparse LU, scaling, presolve | 65 | 40 | 56 | 17.7 s |
+| + primal heuristics, reliability branching, node propagation, c-MIR cuts | 65 | 40 | 61 | 16.8 s |
 
-The last step finds the first feasible solutions on 10teams, fixnet6, harp2, mkc and set1ch and cuts solve times
-on many models (bell5 8.8 s → 0.2 s, qnet1 33 s → 22 s, gesa2 21 s → 12 s, l152lav 20 s → 12 s, p0548
-6.9 s → 2.0 s). Strong branching costs time where LPs are very cheap (misc07 13 s → 44 s; mas76 now just misses
-60 s). The features were chosen by an ablation over all 65 models; knapsack cover cuts made things slower on
-average and are off by default. HiGHS stays ahead mainly through a stronger root bound (more cut families and
-probing), which is the next step.
+The last step finds the first feasible solutions on 10teams, fixnet6, harp2, mkc, p2756 and set1ch, newly proves
+modglob, pp08a and pp08aCUTS, and cuts solve times sharply on many models (gesa2 21 s → 1.0 s, vpm1 14 s → 0.01 s,
+qnet1 33 s → 25 s, l152lav 20 s → 13 s, p0548 6.9 s → 3.3 s). The aggregated c-MIR cuts close most of the root gap
+on fixed-charge models (pp08a: 17 % of the gap left without them, 3 % with them; set1ch 27 % → 9 %; gesa2 56 % →
+25 %). Three models that were solved before now stop just short within 60 s (bell5, mas76, qiu: their incumbents
+are optimal or within 0.006 %, the bound is not yet closed). The features were chosen by an ablation over all 65
+models; knapsack cover cuts made things slower on average and are off by default.
 
 ### QP — Maros–Meszaros and refinery QP
 
@@ -230,9 +231,9 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
 * The interior-point method factorises A Θ Aᵀ directly: models with dense columns (fit2p) are slow, as there is
   no dense-column splitting yet.
 * Presolve covers the standard primal reductions but not yet dual reductions, doubleton substitution or
-  coefficient strengthening. The branch-and-cut root bound is weaker than HiGHS's (no lifted cover, MIR or
-  flow-cover cuts, no probing), and strong branching costs time on models with very cheap LPs (misc07). One
-  thread.
+  coefficient strengthening. The branch-and-cut root bound is still weaker than HiGHS's on some models (no lifted
+  cover or multi-row flow-cover cuts, no probing: p2756, fixnet6), and strong branching costs time on models with
+  very cheap LPs (misc07). One thread.
 
 ## Install without Docker
 
@@ -329,7 +330,9 @@ docs/                idea deck (PDF), figures and the script that draws them
   steepest-edge pricing (Forrest–Goldfarb weight updates), a Harris ratio test and row-wise pricing when the
   pivot row is sparse. Branch-and-bound dives from each node keep the factorisation (a bound change on a basic
   variable keeps the basis dual feasible); other nodes store a 2-bit-per-column basis for a warm restart.
-  Gomory mixed-integer cuts at the root (knapsack cover cuts are available, off by default). Primal heuristics:
+  Root cuts: Gomory mixed-integer cuts from the tableau and aggregated c-MIR cuts (Marchand & Wolsey: up to six
+  rows combined to eliminate continuous columns, variable upper bounds x ≤ u·y substituted, the best of several
+  scalings rounded); knapsack cover cuts are available, off by default. Primal heuristics:
   rounding, a feasibility pump (objective variant, with cycle flips and perturbation) at the root, and
   fractional / guided diving at the root and periodically in the tree, all within 10 % of the time limit; with
   an incumbent, reduced-cost fixing tightens the global bounds. Reliability branching seeds pseudocosts by
@@ -341,8 +344,8 @@ docs/                idea deck (PDF), figures and the script that draws them
 
 1. Primal-dual push crossover for million-variable GPU solutions; dense columns in the interior-point
    method; dual presolve reductions.
-2. Lifted cover, MIR and flow-cover cuts and probing (the root bound is the main gap to HiGHS); cheaper
-   strong branching on models with fast LPs; parallel tree search.
+2. Lifted cover and flow-cover cuts and probing (the remaining root-bound gap to HiGHS); cheaper strong
+   branching on models with fast LPs; parallel tree search; MIPLIB 2017.
 3. GPU LP relaxations inside branch-and-bound for very large MILPs; MIQP.
 4. Native CUDA kernels for the PDHG loop; REST service for plant planning systems.
 

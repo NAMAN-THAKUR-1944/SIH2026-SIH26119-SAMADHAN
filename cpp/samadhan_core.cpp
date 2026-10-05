@@ -47,8 +47,8 @@ static double seconds_since(Clock::time_point t0) {
 struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
-    int features = 27;           // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
-                                 // 16 node domain propagation
+    int features = 59;           // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
+                                 // 16 node domain propagation, 32 c-MIR cuts
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
@@ -1389,6 +1389,239 @@ struct Solver {
         return (int)cuts.size();
     }
 
+    // ---- complemented mixed-integer rounding (c-MIR) cuts with aggregation (Marchand & Wolsey 2001)
+    // Every original row is the equation  a_i x - r_i = 0  with a continuous row activity r_i in [rlo_i, rhi_i],
+    // so any combination of rows is a valid relation. Starting from one row, the relation is tried as it is and
+    // after eliminating up to 5 continuous columns that lie strictly inside their bounds, each time by adding a
+    // row that contains the column. For a relation  sum e_k z_k <= b  (both signs are tried):
+    //   * a continuous column with a variable upper bound  x <= u y  (y binary) is replaced by u y - xbar when that
+    //     bound is the nearer one, otherwise it is shifted to its nearer simple bound; row activities likewise;
+    //   * integer columns are shifted to their nearer bound (complemented at the upper bound);
+    //   * the relation is divided by delta in {|e_k| of fractional integer terms} x {1, 1/2, 1/4, 1/8} and the MIR
+    //     inequality of the scaled relation is formed; the most violated one (relative to its norm) is kept
+    // and mapped back to the original columns (r_i = a_i x).
+    struct VUB { int y; double u; };          // x_j <= u * y  with y binary (y = -1: none)
+    std::vector<VUB> vub;
+    std::vector<std::vector<int>> rows_of_col;  // original rows containing each column
+
+    void prepare_mir() {
+        vub.assign(M.n, {-1, 0.0});
+        rows_of_col.assign(M.n, {});
+        auto is_bin = [&](int k) { return M.isint[k] && root_lb[k] == 0.0 && root_ub[k] == 1.0; };
+        for (int i = 0; i < m_orig; ++i) {
+            for (auto& e : rowsR[i]) rows_of_col[e.first].push_back(i);
+            if (rowsR[i].size() != 2) continue;
+            for (int s = 0; s < 2; ++s) {
+                int j = rowsR[i][s].first, k = rowsR[i][1 - s].first;
+                double aj = rowsR[i][s].second, ak = rowsR[i][1 - s].second;
+                if (M.isint[j] || !is_bin(k) || root_lb[j] != 0.0) continue;
+                double u = INF;
+                if (M.rhi[i] == 0.0 && aj > 0 && -ak / aj > 0) u = -ak / aj;          // aj x + ak y <= 0
+                if (M.rlo[i] == 0.0 && aj < 0 && ak / -aj > 0) u = std::min(u, ak / -aj);  // aj x + ak y >= 0
+                if (std::isfinite(u) && (vub[j].y < 0 || u < vub[j].u)) vub[j] = {k, u};
+            }
+        }
+    }
+
+    // MIR cut from the relation  sum rel[k].second * z_k <= b  over structural columns (z < n) and row activities
+    // (z = n + i). Returns the efficacy (0 if no violated cut) and fills cut / cut_rhs over structural columns.
+    double mir_from_relation(const std::vector<std::pair<int, double>>& rel, double b, const std::vector<double>& act,
+                             std::vector<double>& dense, std::vector<std::pair<int, double>>& cut, double& cut_rhs) {
+        int n = M.n;
+        // merge into a work map: original columns get their coefficients (with VUB substitution applied first)
+        struct Cont { int z; double a; double shift; double sign; int vub_y; double vub_u; double v; };
+        struct Int { int j; double a; double shift; double sign; double v; };
+        std::vector<Cont> cont;
+        std::vector<std::pair<int, double>> ints;                    // (column, coefficient on x) before shifting
+        std::vector<char>& mark = mir_mark;
+        std::vector<int> touched;
+        auto add_int = [&](int j, double a) {
+            if (!mark[j]) { mark[j] = 1; touched.push_back(j); dense[j] = 0.0; }
+            dense[j] += a;
+        };
+        for (auto& e : rel) {
+            int z = e.first;
+            double a = e.second;
+            if (a == 0.0) continue;
+            if (z < n && M.isint[z]) { add_int(z, a); continue; }
+            double l, u, x;
+            if (z < n) { l = root_lb[z]; u = root_ub[z]; x = S.x[z]; }
+            else { int i = z - n; l = M.rlo[i]; u = M.rhi[i]; x = act[i]; }
+            if (z < n && vub[z].y >= 0) {                               // x <= u y: use it if it is nearer
+                int y = vub[z].y;
+                double gap_vub = vub[z].u * S.x[y] - x, gap_lb = std::isfinite(l) ? x - l : INF;
+                if (gap_vub <= gap_lb) {
+                    add_int(y, a * vub[z].u);                           // a x = a u y - a xbar
+                    cont.push_back({z, -a, 0.0, 0.0, y, vub[z].u, std::max(gap_vub, 0.0)});
+                    continue;
+                }
+            }
+            bool use_lb = std::isfinite(l) && (!std::isfinite(u) || x - l <= u - x);
+            if (!use_lb && !std::isfinite(u)) { for (int j : touched) mark[j] = 0; return 0.0; }   // free: no cut
+            double shift = use_lb ? l : u, s = use_lb ? 1.0 : -1.0;
+            b -= a * shift;
+            cont.push_back({z, a * s, shift, s, -1, 0.0, std::max(s * (x - shift), 0.0)});
+        }
+        for (int j : touched) mark[j] = 0;
+        std::vector<Int> it;
+        for (int j : touched) {
+            double a = dense[j];
+            if (std::fabs(a) < 1e-12) continue;
+            double l = root_lb[j], u = root_ub[j], x = S.x[j];
+            bool use_lb = std::isfinite(l) && (!std::isfinite(u) || x - l <= u - x);
+            if (!use_lb && !std::isfinite(u)) return 0.0;
+            double shift = use_lb ? l : u, s = use_lb ? 1.0 : -1.0;
+            b -= a * shift;
+            it.push_back({j, a * s, shift, s, std::max(s * (x - shift), 0.0)});
+        }
+        std::vector<double> deltas;
+        for (auto& q : it) {
+            double f = S.x[q.j] - std::floor(S.x[q.j]);
+            if (f > 0.01 && f < 0.99 && std::fabs(q.a) > 1e-9) deltas.push_back(std::fabs(q.a));
+        }
+        if (deltas.empty()) return 0.0;
+        std::sort(deltas.begin(), deltas.end());
+        deltas.erase(std::unique(deltas.begin(), deltas.end()), deltas.end());
+        if (deltas.size() > 6) deltas.resize(6);
+        double best_eff = 1e-4, best_delta = 0.0;
+        for (double d0 : deltas)
+            for (double div : {1.0, 2.0, 4.0, 8.0}) {
+                double delta = d0 / div, beta = b / delta, f0 = beta - std::floor(beta);
+                if (f0 < 0.05 || f0 > 0.95) continue;
+                double lhs = 0.0, nrm = 0.0;
+                for (auto& q : it) {
+                    double alpha = q.a / delta, fj = alpha - std::floor(alpha);
+                    double c = std::floor(alpha) + std::max(0.0, fj - f0) / (1.0 - f0);
+                    lhs += c * q.v; nrm += c * c;
+                }
+                for (auto& q : cont) {
+                    double c = std::min(0.0, q.a / delta) / (1.0 - f0);
+                    lhs += c * q.v; nrm += c * c;
+                }
+                if (nrm < 1e-12) continue;
+                double eff = (lhs - std::floor(beta)) / std::sqrt(nrm);
+                if (eff > best_eff) { best_eff = eff; best_delta = delta; }
+            }
+        if (best_delta == 0.0) return 0.0;
+        // the cut over the transformed variables, mapped back to structural columns
+        double delta = best_delta, beta = b / delta, f0 = beta - std::floor(beta);
+        double rhs = std::floor(beta);
+        std::vector<int> nz;
+        auto add = [&](int j, double c) {
+            if (!mark[j]) { mark[j] = 1; nz.push_back(j); dense[j] = 0.0; }
+            dense[j] += c;
+        };
+        for (auto& q : it) {
+            double alpha = q.a / delta, fj = alpha - std::floor(alpha);
+            double c = std::floor(alpha) + std::max(0.0, fj - f0) / (1.0 - f0);
+            if (c == 0.0) continue;
+            add(q.j, c * q.sign);                                     // x' = sign (x - shift)
+            rhs += c * q.sign * q.shift;
+        }
+        for (auto& q : cont) {
+            double c = std::min(0.0, q.a / delta) / (1.0 - f0);
+            if (c == 0.0) continue;
+            if (q.vub_y >= 0) {                                       // xbar = u y - x
+                add(q.vub_y, c * q.vub_u);
+                add(q.z, -c);
+            } else if (q.z < n) {
+                add(q.z, c * q.sign);
+                rhs += c * q.sign * q.shift;
+            } else {                                                  // row activity r_i = a_i x
+                for (auto& e : rowsR[q.z - n]) add(e.first, c * q.sign * e.second);
+                rhs += c * q.sign * q.shift;
+            }
+        }
+        cut.clear();
+        double amax = 0.0, amin = INF;
+        for (int j : nz) {
+            mark[j] = 0;
+            double c = dense[j];
+            if (std::fabs(c) < 1e-12) continue;
+            cut.push_back({j, c});
+            amax = std::max(amax, std::fabs(c)); amin = std::min(amin, std::fabs(c));
+        }
+        if (cut.empty() || amax / amin > 1e6) return 0.0;
+        // recheck the violation on the original columns
+        double lhs = 0.0, nrm = 0.0;
+        for (auto& e : cut) { lhs += e.second * S.x[e.first]; nrm += e.second * e.second; }
+        double eff = (lhs - rhs) / std::sqrt(nrm);
+        if (eff < 1e-4) return 0.0;
+        cut_rhs = rhs;
+        return eff;
+    }
+    std::vector<char> mir_mark;
+
+    int add_mir_round() {
+        int n = M.n;
+        if ((int)vub.size() != n) prepare_mir();
+        mir_mark.assign(n, 0);
+        std::vector<double> dense(n, 0.0), act(m_orig, 0.0);
+        for (int i = 0; i < m_orig; ++i) for (auto& e : rowsR[i]) act[i] += e.second * S.x[e.first];
+        std::vector<std::vector<std::pair<int, double>>> cuts;
+        std::vector<double> lo, hi;
+        std::vector<std::pair<int, double>> cut, rel, neg;
+        std::vector<double> relc(n + m_orig, 0.0);
+        std::vector<char> inrel(n + m_orig, 0);
+        std::vector<int> relz;
+        double cut_rhs = 0.0;
+        for (int i0 = 0; i0 < m_orig && (int)cuts.size() < opt.max_cuts_per_round; ++i0) {
+            if (Clock::now() > S.t_end) break;
+            // relation  a_i0 x - r_i0 = 0
+            for (int z : relz) { relc[z] = 0.0; inrel[z] = 0; }
+            relz.clear();
+            auto radd = [&](int z, double a) {
+                if (!inrel[z]) { inrel[z] = 1; relz.push_back(z); }
+                relc[z] += a;
+            };
+            for (auto& e : rowsR[i0]) radd(e.first, e.second);
+            radd(n + i0, -1.0);
+            std::vector<int> used = {i0};
+            for (int agg = 0; agg <= 5; ++agg) {
+                rel.clear(); neg.clear();
+                for (int z : relz) if (std::fabs(relc[z]) > 1e-12) { rel.push_back({z, relc[z]}); neg.push_back({z, -relc[z]}); }
+                double best = 0.0, rhs_best = 0.0;
+                std::vector<std::pair<int, double>> best_cut;
+                for (auto* R : {&rel, &neg}) {
+                    double eff = mir_from_relation(*R, 0.0, act, dense, cut, cut_rhs);
+                    if (eff > best) { best = eff; best_cut = cut; rhs_best = cut_rhs; }
+                }
+                if (best > 0.0) {
+                    cuts.push_back(best_cut); lo.push_back(-INF); hi.push_back(rhs_best);
+                    break;
+                }
+                // eliminate the continuous column farthest from its bounds
+                int jb = -1; double far = 1e-6;
+                for (int z : relz) {
+                    if (z >= n || M.isint[z] || std::fabs(relc[z]) < 1e-12) continue;
+                    double x = S.x[z], d = std::min(x - root_lb[z], root_ub[z] - x);
+                    if (d > far) { far = d; jb = z; }
+                }
+                if (jb < 0) break;
+                int kb = -1; double slack_best = INF;
+                for (int k : rows_of_col[jb]) {
+                    if (std::find(used.begin(), used.end(), k) != used.end()) continue;
+                    double s = std::min(act[k] - M.rlo[k], M.rhi[k] - act[k]);
+                    if (s < slack_best) { slack_best = s; kb = k; }
+                }
+                if (kb < 0) break;
+                double akj = 0.0;
+                for (auto& e : rowsR[kb]) if (e.first == jb) akj = e.second;
+                if (std::fabs(akj) < 1e-9) break;
+                double lam = -relc[jb] / akj;
+                for (auto& e : rowsR[kb]) radd(e.first, lam * e.second);
+                radd(n + kb, -lam);
+                relc[jb] = 0.0;
+                used.push_back(kb);
+            }
+        }
+        if (cuts.empty()) return 0;
+        M.add_rows(cuts, lo, hi);
+        S.resize_to_model();
+        S.refactor_full();
+        return (int)cuts.size();
+    }
+
     // ---- Gomory mixed-integer cuts from the optimal root tableau
     int add_gomory_round() {
         std::vector<std::vector<std::pair<int, double>>> R;
@@ -1513,6 +1746,7 @@ struct Solver {
             rounding_heuristic();
             int added = add_gomory_round();
             if (opt.features & 4) added += add_cover_round();
+            if (opt.features & 32) added += add_mir_round();
             if (!added) break;
             info.cuts += added;
             r = S.solve();
