@@ -43,6 +43,7 @@ below, and are stored in [`results/`](results).
 | **LP** | Refinery planning LP, 1.16 M variables | **5.1× faster** than HiGHS at 1e-6 (cost within 0.0002 %), **22×** at 1e-4 |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1.1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
 | **MILP** | MIPLIB 3 (all 65 models, 60 s) | **40 proved optimal**, all correct, and a feasible solution on 61; 2 of them HiGHS could not finish (nw04, pk1); faster than HiGHS on 16; HiGHS proves 50 |
+| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 32; HiGHS proves 18 and finds a solution on all 50; on 5 models SAMADHAN's solution is the better one |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
@@ -197,6 +198,16 @@ on fixed-charge models (pp08a: 17 % of the gap left without them, 3 % with them;
 are optimal or within 0.006 %, the bound is not yet closed). The features were chosen by an ablation over all 65
 models; knapsack cover cuts made things slower on average and are off by default.
 
+**MIPLIB 2017** (50 models of the current benchmark set, 60 s, one thread, gap 1e-4) is much harder, and here
+HiGHS is clearly ahead: it proves **18** optimal and finds a solution on all 50; SAMADHAN proves **5** (markshare_4_0,
+neos8, nw04, pk1, swath1, all correct; nw04, pk1 and markshare_4_0 are not proved by HiGHS in 60 s) and finds a
+solution on 32. On 5 models SAMADHAN ends with the better solution (gen-ip054, glass4, mas74, pk1, rmatr100-p10). The
+gap has two measured causes: presolve (on ex9 HiGHS's presolve removes the whole model, ours only 17 % of the rows)
+and simplex speed on large LPs (ex9's relaxation: HiGHS 12 s, ours more than 120 s). Running this set also found
+two bugs that are now fixed: integer columns without any bound in the MPS file must be binary (MIPLIB and HiGHS
+convention), and a cut round whose LP could not be re-solved in time is now rolled back instead of ending the
+solve.
+
 ### QP — Maros–Meszaros and refinery QP
 
 ![QP](docs/img/qp_maros.png)
@@ -277,6 +288,8 @@ python -m benchmarks.netlib --engine ipm    # Netlib LPs, IPM + crossover -> res
 python -m benchmarks.crossover --with-L     # cold simplex vs crossover    -> results/lp_crossover.json
 git clone https://github.com/coin-or-tools/Data-miplib3 data/miplib3
 python -m benchmarks.miplib              # MIPLIB 3                       -> results/milp_miplib3.json
+python -m benchmarks.miplib --set miplib2017   # 50 MIPLIB 2017 models     -> results/milp_miplib2017.json
+# (the .mps.gz files of the models listed in benchmarks/miplib.py, from miplib.zib.de/WebData/instances/)
 # Maros-Meszaros .mat files (< 300 KB) from github.com/qpsolvers/maros_meszaros_qpbenchmark -> data/maros/
 python -m benchmarks.qp maros            # Maros-Meszaros QPs             -> results/qp_maros.json
 python -m benchmarks.qp refinery --time-limit 600   # refinery QP (GPU)  -> results/qp_refinery.json
@@ -344,8 +357,9 @@ docs/                idea deck (PDF), figures and the script that draws them
 
 1. Primal-dual push crossover for million-variable GPU solutions; dense columns in the interior-point
    method; dual presolve reductions.
-2. Lifted cover and flow-cover cuts and probing (the remaining root-bound gap to HiGHS); cheaper strong
-   branching on models with fast LPs; parallel tree search; MIPLIB 2017.
+2. Stronger presolve (doubleton and implied-free substitution, dominated and duplicate columns, probing) and
+   a Forrest–Tomlin basis update for large LPs, the two measured gaps on MIPLIB 2017; lifted cover and
+   flow-cover cuts; parallel tree search.
 3. GPU LP relaxations inside branch-and-bound for very large MILPs; MIQP.
 4. Native CUDA kernels for the PDHG loop; REST service for plant planning systems.
 

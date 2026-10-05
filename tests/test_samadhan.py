@@ -30,6 +30,16 @@ def test_mps_reader_tiny():
     assert solve_highs(lp)["obj"] == pytest.approx(-36.0)  # max 3x + 5y -> x = 2, y = 6
 
 
+def test_mps_integer_default_bounds():
+    """MARKER integer columns without any BOUNDS record are binary; any bound record keeps the usual defaults
+    (the convention of MIPLIB and HiGHS)."""
+    import numpy as np
+    lp = read_mps(Path(__file__).with_name("int_bounds.mps"))
+    inf = np.inf
+    assert list(zip(lp.l, lp.u)) == [(0, 1), (2, inf), (0, 5), (-1, inf), (-inf, inf), (0, inf)]
+    assert list(lp.integer) == [True] * 5 + [False]
+
+
 def test_simplex_tiny():
     status, x, obj = solve_lp_dense(read_mps(TINY))
     assert status == "optimal" and obj == pytest.approx(-36.0) and x[:2] == pytest.approx([2.0, 6.0])

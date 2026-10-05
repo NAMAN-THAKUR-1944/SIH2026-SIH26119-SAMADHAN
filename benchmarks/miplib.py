@@ -1,7 +1,10 @@
-"""MIPLIB 3 benchmark: SAMADHAN C++ branch-and-cut vs HiGHS, same time limit and gap, one thread each.
+"""MIPLIB benchmark: SAMADHAN C++ branch-and-cut vs HiGHS, same time limit and gap, one thread each.
 
     git clone https://github.com/coin-or-tools/Data-miplib3 data/miplib3
     python -m benchmarks.miplib [--time-limit 60] [--workers 6] [--reuse-highs]   -> results/milp_miplib3.json
+
+    # MIPLIB 2017: the 50 instances listed in MIPLIB2017 below, from https://miplib.zib.de/WebData/instances/
+    python -m benchmarks.miplib --set miplib2017                                    -> results/milp_miplib2017.json
 
 --reuse-highs keeps the HiGHS results already in the output file and reruns only SAMADHAN.
 """
@@ -16,7 +19,18 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent.parent / "results" / "milp_miplib3.json"
+RESULTS = Path(__file__).resolve().parent.parent / "results"
+SETS = {"miplib3": ("data/miplib3/*.gz", RESULTS / "milp_miplib3.json"),
+        "miplib2017": ("data/miplib2017/*.mps.gz", RESULTS / "milp_miplib2017.json")}
+# MIPLIB 2017 benchmark-set instances used here (each <name>.mps.gz from miplib.zib.de/WebData/instances/)
+MIPLIB2017 = [
+    "30n20b8", "50v-10", "air05", "beasleyC3", "binkar10_1", "bppc4-08", "dano3_3", "dano3_5", "eil33-2",
+    "enlight_hard", "ex9", "gen-ip054", "glass4", "graph20-20-1rand", "h80x6320d", "markshare_4_0", "mas74", "mas76",
+    "mik-250-20-75-4", "n5-3", "neos-662469", "neos-787933", "neos-860300", "neos-911970", "neos-933966",
+    "neos-957323", "neos17", "neos5", "neos8", "net12", "ns1830653", "nu25-pr12", "nw04", "p200x1188c", "pg",
+    "pg5_34", "pk1", "qap10", "rail507", "ran14x18-disj-8", "rmatr100-p10", "rococoC10-001000", "roi2alpha3n4",
+    "sct2", "seymour1", "sp150x300d", "swath1", "swath3", "timtab1", "tr12-30",
+]
 
 
 def run_one(path, time_limit, gap, highs_prev=None):
@@ -73,8 +87,10 @@ def main():
     ap.add_argument("--gap", type=float, default=1e-4)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--reuse-highs", action="store_true", help="keep HiGHS results from the existing output file")
+    ap.add_argument("--set", default="miplib3", choices=list(SETS))
     a = ap.parse_args()
-    files = sorted(f for f in glob.glob("data/miplib3/*.gz") if not f.endswith(".tar.gz"))
+    pattern, OUT = SETS[a.set]
+    files = sorted(f for f in glob.glob(pattern) if not f.endswith(".tar.gz"))
     prev = {}
     if a.reuse_highs and OUT.exists():
         prev = {r["name"]: r["highs"] for r in json.loads(OUT.read_text()) if "highs" in r}

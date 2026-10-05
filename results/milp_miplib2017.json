@@ -1,0 +1,1316 @@
+[
+ {
+  "name": "30n20b8",
+  "n": 18380,
+  "m": 576,
+  "nnz": 109706,
+  "ints": 18380,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 553.0,
+   "bound": 130.0,
+   "gap": 0.7649186256781193,
+   "nodes": 0,
+   "time": 60.12821399999666
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 141.63442882225183,
+   "gap": Infinity,
+   "nodes": 126,
+   "lp_iters": 41157,
+   "time": 60.00608479999978,
+   "cuts": 325
+  }
+ },
+ {
+  "name": "50v-10",
+  "n": 2013,
+  "m": 233,
+  "nnz": 2745,
+  "ints": 1647,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 3553.439985334874,
+   "bound": 3253.7909179777425,
+   "gap": 0.08432647479450615,
+   "nodes": 1325,
+   "time": 60.01475239999854
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 9067.239973932505,
+   "bound": 3157.7106152490114,
+   "gap": 0.6517451149051813,
+   "nodes": 15470,
+   "lp_iters": 199692,
+   "time": 60.00313080000288,
+   "cuts": 347
+  }
+ },
+ {
+  "name": "air05",
+  "n": 7195,
+  "m": 426,
+  "nnz": 52121,
+  "ints": 7195,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 26374.00000000001,
+   "bound": 26373.0,
+   "gap": 3.7916129521912246e-05,
+   "nodes": 19,
+   "time": 37.68292450000445
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 26479.999999999985,
+   "bound": 26051.31383082744,
+   "gap": 0.01618905472705991,
+   "nodes": 143,
+   "lp_iters": 37877,
+   "time": 60.008179500000026,
+   "cuts": 240
+  },
+  "obj_rel_diff": 0.004019109729277868
+ },
+ {
+  "name": "beasleyC3",
+  "n": 2500,
+  "m": 1750,
+  "nnz": 5000,
+  "ints": 1250,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 754.0000000000001,
+   "bound": 754.0000000000001,
+   "gap": 0.0,
+   "nodes": 378,
+   "time": 28.72990199999913
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 938.0,
+   "bound": 367.69532265920236,
+   "gap": 0.6080007221117245,
+   "nodes": 4540,
+   "lp_iters": 237662,
+   "time": 59.99979339999788,
+   "cuts": 960
+  },
+  "obj_rel_diff": 0.2440318302387266
+ },
+ {
+  "name": "binkar10_1",
+  "n": 2298,
+  "m": 1026,
+  "nnz": 4496,
+  "ints": 170,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 6742.200024000088,
+   "bound": 6741.527779075702,
+   "gap": 9.970705733932534e-05,
+   "nodes": 1547,
+   "time": 28.829745700000785
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 6747.550015000005,
+   "bound": 6730.106444428921,
+   "gap": 0.002585170992776094,
+   "nodes": 72183,
+   "lp_iters": 1178534,
+   "time": 60.01360059999841,
+   "cuts": 68
+  },
+  "obj_rel_diff": 0.0007935081992336352
+ },
+ {
+  "name": "bppc4-08",
+  "n": 1456,
+  "m": 111,
+  "nnz": 23964,
+  "ints": 1454,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 53.00000000000001,
+   "bound": 52.0,
+   "gap": 0.018867924528302018,
+   "nodes": 9682,
+   "time": 60.01188169999659
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 60.0,
+   "bound": 51.58999999999998,
+   "gap": 0.14016666666666697,
+   "nodes": 46900,
+   "lp_iters": 558249,
+   "time": 60.00578279999529,
+   "cuts": 109
+  }
+ },
+ {
+  "name": "dano3_3",
+  "n": 13873,
+  "m": 3202,
+  "nnz": 79655,
+  "ints": 69,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 576.3446330306433,
+   "bound": 576.2474269319702,
+   "gap": 0.00016865967530921137,
+   "nodes": 0,
+   "time": 60.028169600002
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": Infinity,
+   "bound": -Infinity,
+   "gap": Infinity,
+   "nodes": 0,
+   "lp_iters": 105581,
+   "time": 59.99948179999699,
+   "cuts": 0
+  }
+ },
+ {
+  "name": "dano3_5",
+  "n": 13873,
+  "m": 3202,
+  "nnz": 79655,
+  "ints": 115,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 577.7448683126966,
+   "bound": 576.3537388079011,
+   "gap": 0.0024078612915390332,
+   "nodes": 0,
+   "time": 60.0272305000035
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": Infinity,
+   "bound": -Infinity,
+   "gap": Infinity,
+   "nodes": 0,
+   "lp_iters": 111137,
+   "time": 59.99980570000364,
+   "cuts": 0
+  }
+ },
+ {
+  "name": "eil33-2",
+  "n": 4516,
+  "m": 32,
+  "nnz": 44243,
+  "ints": 4516,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 987.6741330000004,
+   "bound": 831.2075429371195,
+   "gap": 0.1584192446020867,
+   "nodes": 137,
+   "time": 60.01978899999813
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 1010.7166109999977,
+   "bound": 828.0710560382175,
+   "gap": 0.1807089672554917,
+   "nodes": 2757,
+   "lp_iters": 81319,
+   "time": 59.99949010000618,
+   "cuts": 209
+  }
+ },
+ {
+  "name": "enlight_hard",
+  "n": 200,
+  "m": 100,
+  "nnz": 560,
+  "ints": 200,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 37.0,
+   "bound": 37.0,
+   "gap": 0.0,
+   "nodes": 2303,
+   "time": 14.97435519999999
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 27.179989223412143,
+   "gap": Infinity,
+   "nodes": 46063,
+   "lp_iters": 385948,
+   "time": 60.003075100004736,
+   "cuts": 550
+  }
+ },
+ {
+  "name": "ex9",
+  "n": 10404,
+  "m": 40962,
+  "nnz": 517112,
+  "ints": 10404,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 81.0,
+   "bound": 81.0,
+   "gap": 0.0,
+   "nodes": 0,
+   "time": 5.787867099999858
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": Infinity,
+   "bound": -Infinity,
+   "gap": Infinity,
+   "nodes": 0,
+   "lp_iters": 8700,
+   "time": 60.4325945000033,
+   "cuts": 0
+  },
+  "obj_rel_diff": Infinity
+ },
+ {
+  "name": "gen-ip054",
+  "n": 30,
+  "m": 27,
+  "nnz": 532,
+  "ints": 30,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 6858.878959236024,
+   "bound": 6775.344791329036,
+   "gap": 0.012178982659331313,
+   "nodes": 176340,
+   "time": 60.00688649999938
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 6850.576067582,
+   "bound": 6802.478820954922,
+   "gap": 0.007020905417674504,
+   "nodes": 1659113,
+   "lp_iters": 5422980,
+   "time": 60.14236810000189,
+   "cuts": 40
+  }
+ },
+ {
+  "name": "glass4",
+  "n": 322,
+  "m": 396,
+  "nnz": 1815,
+  "ints": 302,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 1811127011.111111,
+   "bound": 821314456.7860183,
+   "gap": 0.5465174713052571,
+   "nodes": 20036,
+   "time": 60.00478509999812
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 1800016600.0000012,
+   "bound": 900006000.0,
+   "gap": 0.5000012777659942,
+   "nodes": 955919,
+   "lp_iters": 2130538,
+   "time": 60.11187529999801,
+   "cuts": 100
+  }
+ },
+ {
+  "name": "graph20-20-1rand",
+  "n": 2183,
+  "m": 5587,
+  "nnz": 19277,
+  "ints": 2183,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -8.00000000000211,
+   "bound": -21.0,
+   "gap": 1.6249999999993077,
+   "nodes": 2,
+   "time": 60.01058180000109
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": -37.0,
+   "gap": Infinity,
+   "nodes": 927,
+   "lp_iters": 134353,
+   "time": 60.00798919999681,
+   "cuts": 60
+  }
+ },
+ {
+  "name": "h80x6320d",
+  "n": 12640,
+  "m": 6558,
+  "nnz": 31521,
+  "ints": 6320,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 6382.09904999995,
+   "bound": 6381.469584903423,
+   "gap": 9.862979116979994e-05,
+   "nodes": 15,
+   "time": 21.610540599998785
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 5836.894966582017,
+   "gap": Infinity,
+   "nodes": 378,
+   "lp_iters": 33728,
+   "time": 60.04554799999425,
+   "cuts": 873
+  }
+ },
+ {
+  "name": "markshare_4_0",
+  "n": 34,
+  "m": 4,
+  "nnz": 123,
+  "ints": 30,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 1.0,
+   "bound": 0.0,
+   "gap": 1.0,
+   "nodes": 372333,
+   "time": 60.0105007999955
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 0.9999999999999983,
+   "bound": 0.9999999999999983,
+   "gap": 0.0,
+   "nodes": 1241155,
+   "lp_iters": 3406573,
+   "time": 14.677735199996217,
+   "cuts": 8
+  }
+ },
+ {
+  "name": "mas74",
+  "n": 151,
+  "m": 13,
+  "nnz": 1706,
+  "ints": 150,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 12014.89237909993,
+   "bound": 10707.629069637862,
+   "gap": 0.10880358044122568,
+   "nodes": 24666,
+   "time": 60.012961699998414
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 11801.185728999999,
+   "bound": 11107.426134560532,
+   "gap": 0.058787278699854374,
+   "nodes": 257428,
+   "lp_iters": 1315263,
+   "time": 60.02914440000233,
+   "cuts": 169
+  }
+ },
+ {
+  "name": "mas76",
+  "n": 151,
+  "m": 12,
+  "nnz": 1640,
+  "ints": 150,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 40005.054141,
+   "bound": 39321.99246697313,
+   "gap": 0.01707438444201022,
+   "nodes": 111477,
+   "time": 60.01384429999598
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 40005.05414199999,
+   "bound": 39758.65733615683,
+   "gap": 0.006159141916632974,
+   "nodes": 195556,
+   "lp_iters": 1220229,
+   "time": 60.01036790000326,
+   "cuts": 202
+  }
+ },
+ {
+  "name": "mik-250-20-75-4",
+  "n": 270,
+  "m": 195,
+  "nnz": 9270,
+  "ints": 250,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": -52301.00000000001,
+   "bound": -52306.20960735468,
+   "gap": 9.96081787092193e-05,
+   "nodes": 4201,
+   "time": 18.440102500004286
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": -52066.0,
+   "bound": -52756.46648226687,
+   "gap": 0.01326136984340781,
+   "nodes": 35803,
+   "lp_iters": 542630,
+   "time": 60.00514260000418,
+   "cuts": 956
+  },
+  "obj_rel_diff": 0.004493221926923142
+ },
+ {
+  "name": "n5-3",
+  "n": 2550,
+  "m": 1062,
+  "nnz": 9900,
+  "ints": 150,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 8105.000000000003,
+   "bound": 8105.000000000003,
+   "gap": 0.0,
+   "nodes": 566,
+   "time": 47.666621899996244
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 6626.850983074484,
+   "gap": Infinity,
+   "nodes": 4945,
+   "lp_iters": 238486,
+   "time": 60.000313300003235,
+   "cuts": 350
+  }
+ },
+ {
+  "name": "neos-662469",
+  "n": 18235,
+  "m": 1085,
+  "nnz": 200055,
+  "ints": 18235,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 1722996.5,
+   "bound": 184366.5,
+   "gap": 0.8929965905328304,
+   "nodes": 2,
+   "time": 60.034954599999764
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 184356.7815742521,
+   "gap": Infinity,
+   "nodes": 81,
+   "lp_iters": 76913,
+   "time": 60.01186050000192,
+   "cuts": 89
+  }
+ },
+ {
+  "name": "neos-787933",
+  "n": 236376,
+  "m": 1897,
+  "nnz": 298320,
+  "ints": 236376,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 34.0,
+   "bound": 25.0,
+   "gap": 0.2647058823529412,
+   "nodes": 68,
+   "time": 60.11093109999638
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 2.9999999999999925,
+   "gap": Infinity,
+   "nodes": 387,
+   "lp_iters": 37329,
+   "time": 60.0020902000018,
+   "cuts": 120
+  }
+ },
+ {
+  "name": "neos-860300",
+  "n": 1385,
+  "m": 850,
+  "nnz": 384329,
+  "ints": 1384,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 3200.999999999999,
+   "bound": 3200.999999999999,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 21.466110300003493
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 3625.000000000032,
+   "bound": 2237.8420296034833,
+   "gap": 0.38266426769559625,
+   "nodes": 613,
+   "lp_iters": 81023,
+   "time": 60.004514000000285,
+   "cuts": 441
+  },
+  "obj_rel_diff": 0.1324586066854211
+ },
+ {
+  "name": "neos-911970",
+  "n": 888,
+  "m": 107,
+  "nnz": 3408,
+  "ints": 840,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 54.76000000000019,
+   "bound": 54.76000000000019,
+   "gap": 0.0,
+   "nodes": 1370,
+   "time": 14.567207499996584
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 57.130000000000024,
+   "bound": 49.98661870503595,
+   "gap": 0.12503730605573377,
+   "nodes": 241172,
+   "lp_iters": 1125509,
+   "time": 60.027024199997214,
+   "cuts": 82
+  },
+  "obj_rel_diff": 0.043279766252736045
+ },
+ {
+  "name": "neos-933966",
+  "n": 31762,
+  "m": 12047,
+  "nnz": 180618,
+  "ints": 27982,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 324.0,
+   "bound": 318.0000000000007,
+   "gap": 0.01851851851851641,
+   "nodes": 0,
+   "time": 60.06058929999563
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": Infinity,
+   "bound": -Infinity,
+   "gap": Infinity,
+   "nodes": 0,
+   "lp_iters": 36800,
+   "time": 60.00956689999718,
+   "cuts": 0
+  }
+ },
+ {
+  "name": "neos-957323",
+  "n": 57756,
+  "m": 3757,
+  "nnz": 499656,
+  "ints": 57756,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -188.81509136,
+   "bound": -237.7574078582727,
+   "gap": 0.25920765202479473,
+   "nodes": 0,
+   "time": 61.30944119999913
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": Infinity,
+   "bound": -Infinity,
+   "gap": Infinity,
+   "nodes": 0,
+   "lp_iters": 92971,
+   "time": 59.99977939999694,
+   "cuts": 0
+  }
+ },
+ {
+  "name": "neos17",
+  "n": 535,
+  "m": 486,
+  "nnz": 4931,
+  "ints": 300,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 0.15000257742257742,
+   "bound": 0.14999144855144855,
+   "gap": 7.419119937860203e-05,
+   "nodes": 292,
+   "time": 32.07643929999904
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 0.41079989010989065,
+   "bound": 0.11547260739260772,
+   "gap": 0.2953272827172829,
+   "nodes": 121684,
+   "lp_iters": 873679,
+   "time": 60.00178959999966,
+   "cuts": 0
+  },
+  "obj_rel_diff": 0.2607973126873132
+ },
+ {
+  "name": "neos5",
+  "n": 63,
+  "m": 63,
+  "nnz": 2016,
+  "ints": 53,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 14.999999999997197,
+   "bound": 14.0,
+   "gap": 0.06666666666649225,
+   "nodes": 25809,
+   "time": 60.01241600000503
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 15.000000000000002,
+   "bound": 14.02272727272728,
+   "gap": 0.06515151515151475,
+   "nodes": 97129,
+   "lp_iters": 910342,
+   "time": 60.006526599994565,
+   "cuts": 300
+  }
+ },
+ {
+  "name": "neos8",
+  "n": 23228,
+  "m": 46324,
+  "nnz": 313180,
+  "ints": 23228,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": -3718.9999999999995,
+   "bound": -3718.9999999999995,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 14.931709599994065
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": -3719.0,
+   "bound": -3719.0,
+   "gap": 0.0,
+   "nodes": 28,
+   "lp_iters": 29746,
+   "time": 47.46003379999675,
+   "cuts": 653
+  },
+  "obj_rel_diff": 1.2227678163120843e-16
+ },
+ {
+  "name": "net12",
+  "n": 14115,
+  "m": 14021,
+  "nnz": 80384,
+  "ints": 1603,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 255.0,
+   "bound": 131.0,
+   "gap": 0.48627450980392156,
+   "nodes": 0,
+   "time": 60.063823199998296
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 53.91632495547709,
+   "gap": Infinity,
+   "nodes": 47,
+   "lp_iters": 82946,
+   "time": 60.02501650000031,
+   "cuts": 960
+  }
+ },
+ {
+  "name": "ns1830653",
+  "n": 1629,
+  "m": 2932,
+  "nnz": 100933,
+  "ints": 1458,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 36622.0,
+   "bound": 12122.0,
+   "gap": 0.6689967778930698,
+   "nodes": 180,
+   "time": 60.00584019999951
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 11622.000000000002,
+   "gap": Infinity,
+   "nodes": 284,
+   "lp_iters": 118632,
+   "time": 60.00064030000193,
+   "cuts": 480
+  }
+ },
+ {
+  "name": "nu25-pr12",
+  "n": 5868,
+  "m": 2313,
+  "nnz": 17712,
+  "ints": 5868,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 53904.99999999999,
+   "bound": 53900.0,
+   "gap": 9.275577404679945e-05,
+   "nodes": 19,
+   "time": 22.613434300001245
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 53905.0,
+   "bound": 53885.0,
+   "gap": 0.0003727518404622123,
+   "nodes": 10273,
+   "lp_iters": 200248,
+   "time": 60.000046000004524,
+   "cuts": 247
+  },
+  "obj_rel_diff": 1.34977416087254e-16
+ },
+ {
+  "name": "nw04",
+  "n": 87482,
+  "m": 36,
+  "nnz": 636666,
+  "ints": 87482,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 16862.000000000004,
+   "bound": 16313.777777777777,
+   "gap": 0.03251228930270585,
+   "nodes": 0,
+   "time": 60.02223619999859
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 16861.999999996908,
+   "bound": 16861.999999996908,
+   "gap": 0.0,
+   "nodes": 0,
+   "lp_iters": 233,
+   "time": 1.029397100002753,
+   "cuts": 32
+  }
+ },
+ {
+  "name": "p200x1188c",
+  "n": 2376,
+  "m": 1388,
+  "nnz": 4752,
+  "ints": 1188,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 15078.0,
+   "bound": 15078.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 3.25939500000095
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 23760.0,
+   "bound": 8405.158230447349,
+   "gap": 0.6462475492235964,
+   "nodes": 19140,
+   "lp_iters": 422721,
+   "time": 60.00327490000095,
+   "cuts": 159
+  },
+  "obj_rel_diff": 0.5758058097890967
+ },
+ {
+  "name": "pg",
+  "n": 2700,
+  "m": 125,
+  "nnz": 5200,
+  "ints": 100,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": -8674.342607117029,
+   "bound": -8675.172197619124,
+   "gap": 9.563727646800145e-05,
+   "nodes": 27,
+   "time": 6.078466499995557
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": -8636.45260895097,
+   "bound": -8843.78677401982,
+   "gap": 0.024006866529200217,
+   "nodes": 4352,
+   "lp_iters": 288431,
+   "time": 60.00233539999912,
+   "cuts": 960
+  },
+  "obj_rel_diff": 0.004368054143373395
+ },
+ {
+  "name": "pg5_34",
+  "n": 2600,
+  "m": 225,
+  "nnz": 7700,
+  "ints": 100,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -14324.34079587945,
+   "bound": -14358.381137387263,
+   "gap": 0.0023763984669789968,
+   "nodes": 1109,
+   "time": 60.01257059999625
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": -14267.557326130776,
+   "bound": -14532.53623233708,
+   "gap": 0.018572128371336462,
+   "nodes": 5558,
+   "lp_iters": 303827,
+   "time": 60.00003649999899,
+   "cuts": 960
+  }
+ },
+ {
+  "name": "pk1",
+  "n": 86,
+  "m": 45,
+  "nnz": 915,
+  "ints": 55,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 13.999999999999915,
+   "bound": 1.7793558872687967,
+   "gap": 0.872903150909371,
+   "nodes": 103769,
+   "time": 60.00750730000436
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 11.000000000000053,
+   "bound": 11.000000000000053,
+   "gap": 0.0,
+   "nodes": 323220,
+   "lp_iters": 3109788,
+   "time": 39.402390300004285,
+   "cuts": 24
+  }
+ },
+ {
+  "name": "qap10",
+  "n": 4150,
+  "m": 1820,
+  "nnz": 18200,
+  "ints": 4150,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 482.0,
+   "bound": 334.0,
+   "gap": 0.3070539419087137,
+   "nodes": 0,
+   "time": 60.82072299999709
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 332.5662276536543,
+   "gap": Infinity,
+   "nodes": 2,
+   "lp_iters": 172489,
+   "time": 59.99925559999724,
+   "cuts": 0
+  }
+ },
+ {
+  "name": "rail507",
+  "n": 63019,
+  "m": 509,
+  "nnz": 468878,
+  "ints": 63009,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 174.99999999999991,
+   "bound": 173.0,
+   "gap": 0.011428571428570946,
+   "nodes": 103,
+   "time": 60.05833529999654
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 172.18443459984215,
+   "gap": Infinity,
+   "nodes": 9,
+   "lp_iters": 13677,
+   "time": 60.00323419999812,
+   "cuts": 120
+  }
+ },
+ {
+  "name": "ran14x18-disj-8",
+  "n": 504,
+  "m": 447,
+  "nnz": 10277,
+  "ints": 252,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 3743.9999981304313,
+   "bound": 3504.5605558566585,
+   "gap": 0.06395284251958788,
+   "nodes": 2275,
+   "time": 60.00261890000547
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 4414.999999812911,
+   "bound": 3501.9326159295865,
+   "gap": 0.20681027948403535,
+   "nodes": 7549,
+   "lp_iters": 189449,
+   "time": 60.00049129999766,
+   "cuts": 459
+  }
+ },
+ {
+  "name": "rmatr100-p10",
+  "n": 7359,
+  "m": 7260,
+  "nnz": 21877,
+  "ints": 100,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 425.99999999999955,
+   "bound": 369.51092423394135,
+   "gap": 0.13260346423957337,
+   "nodes": 256,
+   "time": 60.00648949999595
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 424.00000000000045,
+   "bound": 399.2956647415348,
+   "gap": 0.058264941647324646,
+   "nodes": 715,
+   "lp_iters": 107607,
+   "time": 59.99998420000053,
+   "cuts": 378
+  }
+ },
+ {
+  "name": "rococoC10-001000",
+  "n": 3117,
+  "m": 1293,
+  "nnz": 11751,
+  "ints": 3117,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 11515.0,
+   "bound": 10695.0,
+   "gap": 0.07121146330872774,
+   "nodes": 1867,
+   "time": 60.01026420000562
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 9099.080757008005,
+   "gap": Infinity,
+   "nodes": 3389,
+   "lp_iters": 216022,
+   "time": 60.00690669999377,
+   "cuts": 377
+  }
+ },
+ {
+  "name": "roi2alpha3n4",
+  "n": 6816,
+  "m": 1251,
+  "nnz": 878812,
+  "ints": 6642,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -59.04268138447983,
+   "bound": -75.75630859001849,
+   "gap": 0.2830770353517865,
+   "nodes": 1,
+   "time": 61.125827600000775
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": -44.93698932216998,
+   "bound": -76.03736766539807,
+   "gap": 0.692088607010539,
+   "nodes": 452,
+   "lp_iters": 42300,
+   "time": 60.00072679999581,
+   "cuts": 324
+  }
+ },
+ {
+  "name": "sct2",
+  "n": 5885,
+  "m": 2151,
+  "nnz": 23643,
+  "ints": 2872,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -230.51551323597155,
+   "bound": -231.06356706666355,
+   "gap": 0.002377513873137781,
+   "nodes": 713,
+   "time": 60.013363899997785
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": -229.13095606690283,
+   "bound": -231.11696381946672,
+   "gap": 0.008667566297694006,
+   "nodes": 26031,
+   "lp_iters": 324861,
+   "time": 60.004549300001464,
+   "cuts": 82
+  }
+ },
+ {
+  "name": "seymour1",
+  "n": 1372,
+  "m": 4944,
+  "nnz": 33549,
+  "ints": 451,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 410.7637013945249,
+   "bound": 408.4232552783576,
+   "gap": 0.005697791962195264,
+   "nodes": 892,
+   "time": 60.00700849999703
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 411.19518363022536,
+   "bound": 407.4583903097214,
+   "gap": 0.012701748799534266,
+   "nodes": 383,
+   "lp_iters": 92915,
+   "time": 60.00678970000254,
+   "cuts": 505
+  }
+ },
+ {
+  "name": "sp150x300d",
+  "n": 600,
+  "m": 450,
+  "nnz": 1200,
+  "ints": 300,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 69.0,
+   "bound": 69.0,
+   "gap": 0.0,
+   "nodes": 1,
+   "time": 0.08411509999859845
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 69.0,
+   "bound": 57.60183939877789,
+   "gap": 0.16519073335104506,
+   "nodes": 42838,
+   "lp_iters": 123085,
+   "time": 60.000948100002255,
+   "cuts": 420
+  },
+  "obj_rel_diff": 0.0
+ },
+ {
+  "name": "swath1",
+  "n": 6805,
+  "m": 884,
+  "nnz": 34965,
+  "ints": 2306,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 379.0712957499999,
+   "bound": 379.0712957499999,
+   "gap": 0.0,
+   "nodes": 107,
+   "time": 19.917603199995938
+  },
+  "samadhan": {
+   "status": "optimal",
+   "obj": 379.07129575000005,
+   "bound": 379.07129575000005,
+   "gap": 0.0,
+   "nodes": 4145,
+   "lp_iters": 186507,
+   "time": 21.943014100007048,
+   "cuts": 88
+  },
+  "obj_rel_diff": 4.498632803231029e-16
+ },
+ {
+  "name": "swath3",
+  "n": 6805,
+  "m": 884,
+  "nnz": 34965,
+  "ints": 2706,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 399.33256844999806,
+   "bound": 356.41132098823846,
+   "gap": 0.10748246161929048,
+   "nodes": 2337,
+   "time": 60.02793500000553
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 401.7726791499998,
+   "bound": 376.31560547777667,
+   "gap": 0.06336188345628867,
+   "nodes": 12126,
+   "lp_iters": 441550,
+   "time": 60.002262299995344,
+   "cuts": 257
+  }
+ },
+ {
+  "name": "timtab1",
+  "n": 397,
+  "m": 171,
+  "nnz": 829,
+  "ints": 171,
+  "parser_match": true,
+  "highs": {
+   "status": "Optimal",
+   "obj": 764773.9999997794,
+   "bound": 764699.3514937934,
+   "gap": 9.7608582386419e-05,
+   "nodes": 9046,
+   "time": 53.23241010000493
+  },
+  "samadhan": {
+   "status": "no_solution_found",
+   "obj": Infinity,
+   "bound": 455907.0166332263,
+   "gap": Infinity,
+   "nodes": 52970,
+   "lp_iters": 692799,
+   "time": 60.002623699998495,
+   "cuts": 786
+  }
+ },
+ {
+  "name": "tr12-30",
+  "n": 1080,
+  "m": 750,
+  "nnz": 2508,
+  "ints": 360,
+  "parser_match": true,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 130624.0,
+   "bound": 130422.78983892333,
+   "gap": 0.0015403766618436847,
+   "nodes": 4772,
+   "time": 60.01254589999735
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "obj": 140650.0,
+   "bound": 110083.5808528225,
+   "gap": 0.21732256770122643,
+   "nodes": 65852,
+   "lp_iters": 516995,
+   "time": 60.00810159999541,
+   "cuts": 960
+  }
+ }
+]

@@ -86,6 +86,21 @@ struct Model {
         m += (int)rows.size();
     }
 
+    // drop the rows from `keep` on (cuts appended after the original rows)
+    void truncate_rows(int keep) {
+        if (keep >= m) return;
+        std::vector<int> ncp(n + 1, 0), nri;
+        std::vector<double> ncv;
+        for (int j = 0; j < n; ++j) {
+            for (int t = cp[j]; t < cp[j + 1]; ++t)
+                if (ri[t] < keep) { nri.push_back(ri[t]); ncv.push_back(cv[t]); }
+            ncp[j + 1] = (int)nri.size();
+        }
+        cp.swap(ncp); ri.swap(nri); cv.swap(ncv);
+        rlo.resize(keep); rhi.resize(keep);
+        m = keep;
+    }
+
     // row-wise copy of A (for expanding logical variables inside cuts and for feasibility checks)
     void rows_of(std::vector<std::vector<std::pair<int, double>>>& R) const {
         R.assign(m, {});
@@ -348,6 +363,14 @@ struct Simplex {
 
     // (re)size for the current model; keeps existing basis info for old columns, new rows get basic logicals
     // (their dual steepest-edge weights are marked unknown and computed at the next refactorisation)
+    // after the model lost its last rows (cuts rolled back): the sizes follow the model again; bounds, costs and
+    // the basis are then restored from a saved state
+    void shrink_to_model() {
+        n = M->n; m = M->m; N = n + m;
+        x.resize(N); d.resize(N); ar.resize(N); acol.resize(m);
+        build_rows();
+    }
+
     void resize_to_model() {
         int old_m = m;
         n = M->n; m = M->m; N = n + m;
@@ -1742,23 +1765,35 @@ struct Solver {
         }
         // root cutting-plane loop
         double prev = S.objective();
-        for (int round = 0; round < opt.cut_rounds; ++round) {
+        // cutting gets at most 40% of the time limit; a round whose LP does not finish by then is rolled back
+        auto cut_end = t0 + std::chrono::milliseconds((long long)(0.4 * opt.time_limit * 1000));
+        for (int round = 0; round < opt.cut_rounds && Clock::now() < cut_end; ++round) {
             rounding_heuristic();
+            int m_before = M.m;
+            LPState before = save_lp();
             int added = add_gomory_round();
             if (opt.features & 4) added += add_cover_round();
             if (opt.features & 32) added += add_mir_round();
             if (!added) break;
-            info.cuts += added;
+            auto t_end = S.t_end;
+            S.t_end = std::min(t_end, cut_end);
             r = S.solve();
-            if (r != OPTIMAL) break;
+            S.t_end = t_end;
+            if (r != OPTIMAL) {
+                // the LP with this round's cuts did not solve (time limit or numerical trouble): drop them and go on
+                // from the last root LP that did
+                M.truncate_rows(m_before);
+                S.shrink_to_model();
+                restore_lp(before);
+                r = OPTIMAL;
+                if (opt.verbose) std::printf("  cut round %d rolled back\n", round + 1);
+                break;
+            }
+            info.cuts += added;
             double now = S.objective();
             if (opt.verbose) std::printf("  cut round %d: +%d cuts, bound %.10g\n", round + 1, added, now);
             if (now - prev < 1e-4 * (1.0 + std::fabs(now))) { prev = now; break; }
             prev = now;
-        }
-        if (r != OPTIMAL) {   // numerical trouble after cuts: restart without them
-            info.time = seconds_since(t0);
-            return 5;
         }
         info.root_bound_cuts = S.objective();
         if (opt.features & 16) build_propagation();

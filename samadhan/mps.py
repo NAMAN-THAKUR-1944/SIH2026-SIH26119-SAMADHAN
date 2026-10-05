@@ -152,7 +152,12 @@ def _read(path, fixed):
     l = np.zeros(n)
     u = np.full(n, np.inf)
     integer = np.array(integer, bool)
-    u[integer] = np.inf  # MPS: integer columns default to [0, inf) in modern readers
+    # MPS convention (MIPLIB, HiGHS, CPLEX): an integer column from a MARKER block with no BOUNDS record at all is
+    # binary; once any bound is given the others keep the usual defaults (0 and +inf)
+    unbounded_int = integer.copy()
+    for _, j, _ in bounds:
+        unbounded_int[j] = False
+    u[unbounded_int] = 1.0
 
     ridx = {r: i for i, r in enumerate(row_order)}
     rr, cc, vv = [], [], []
