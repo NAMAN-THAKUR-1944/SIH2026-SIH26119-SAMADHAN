@@ -42,8 +42,8 @@ below, and are stored in [`results/`](results).
 |---|---|---|
 | **LP** | Refinery planning LP, 1.16 M variables | **5.1× faster** than HiGHS at 1e-6 (cost within 0.0002 %), **22×** at 1e-4 |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
-| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **41 proved optimal**, all correct, and a feasible solution on 62; 3 of them HiGHS could not finish (nw04, pk1, qiu); faster than HiGHS on 16; HiGHS proves 50 |
-| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 33; HiGHS proves 18 and finds a solution on all 50; on 5 models SAMADHAN's solution is the better one |
+| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **42 proved optimal**, all correct, and a feasible solution on 62; 3 of them HiGHS could not finish (nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
+| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 35; HiGHS proves 18 and finds a solution on all 50; on 5 models SAMADHAN's solution is the better one |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
@@ -141,51 +141,52 @@ the faster of its dual simplex and interior point; SAMADHAN with the faster of i
 
 | Engine | Solved | Accuracy | Time |
 |---|---:|---|---|
-| C++ dual simplex (presolve, sparse LU) | **91 / 91** | exact vertices, all within 1e-9 of the HiGHS optimum (worst 1e-10) | median 0.012 s (HiGHS 0.008 s), 26 s for all 91, faster than HiGHS on 8 |
-| Interior point + crossover | 89 / 91 | exact vertices, all within 1e-9 (worst 3e-10) | median 21 iterations, 0.11 s; dfl001 and fit2p time out at 120 s (dense normal equations) |
+| C++ dual simplex (presolve, sparse LU) | **91 / 91** | exact vertices, all within 1e-9 of the HiGHS optimum (worst 1e-10) | median 0.014 s (HiGHS 0.008 s), 24 s for all 91, faster than HiGHS on 10 |
+| Interior point + crossover | 89 / 91 | exact vertices, all within 1e-9 (worst 1e-10) | median 21 iterations, 0.11 s; dfl001 and fit2p time out at 120 s (dense normal equations) |
 | GPU engine, CPU mode, 1e-4 KKT | 86 / 91 | 80 within 0.1 % | median 1.7 s |
 
 The simplex and the interior-point method also solve the five models the first-order engine cannot (bnl1, greenbea,
 greenbeb, perold, pilot4): these ill-conditioned LPs are exactly where second-order and vertex methods are needed.
-The hardest, pilot87, now lands within 1.3e-14 of the optimum with both the simplex and the interior point +
+The hardest, pilot87, now lands within 9e-15 of the optimum with both the simplex and the interior point +
 crossover, thanks to scaling and a final pass at 100× tighter tolerances whose result is confirmed on a fresh
-factorisation. The Forrest–Tomlin update cut the total time for all 91 from 29 s to 26 s (dfl001 12.4 s → 9.8 s,
-fit2p 2.6 s → 1.6 s).
+factorisation. The Forrest–Tomlin update cut the total time for all 91 from 29 s to 24 s.
 
 ### LP — exact vertices from the GPU engine (crossover)
 
-Crossover turns the GPU engine's 1e-4 solution into an exact optimal vertex; every result below that finished equals
-the cold-start simplex optimum to 4e-15. Crossover wins on 2 of the 11 models (fit2p 18×, refinery S 4.6×), is even
-on 25fv47, 80bau3b and degen3, and is slower on the rest. On the 100k+ refinery models the crash basis from a 1e-4
-point needs many pivots, and how many depends on the GPU point, which is not bit-identical between runs (parallel
-floating-point sums): on refinery-L crossover took 1,292 s before the Forrest–Tomlin update, 583 s in the first run
-after it (faster than the 674 s cold start of that run), and from the point of the run below did not finish within
-30 minutes; HiGHS's interior point takes 64 s. On pilot and greenbea the GPU engine stopped at its time limit short
-of 1e-4; crossover still finished exactly from that point:
+Crossover turns the GPU engine's 1e-4 solution into an exact optimal vertex; every result below equals the
+cold-start simplex optimum to 2e-15. It now beats the cold start on 9 of the 11 models, among them all three
+refinery models (L: 39 s against 706 s, 18×; M: 2.67 s against 54 s), and is slower on d2q06c and pilot. Two changes
+made the difference. A point inside a degenerate optimal face has more columns strictly inside their bounds than
+there are rows (refinery-L: 41,195 against 31,536); they used to be put at a bound, now they are pushed there one by
+one with a ratio test. And the crash basis used to come from the primal point alone and was far from dual feasible,
+so the dual simplex on shifted costs re-solved the LP; now basic variables outside their bounds get the bound
+relaxed to their value, the primal simplex finishes the relaxed LP, and the GPU duals guide the crash. Before,
+refinery-L took between 583 s and more than 30 minutes depending on the GPU point. On pilot and greenbea the GPU
+engine stopped at its time limit short of 1e-4; crossover still finished exactly from that point:
 
 | Model | Variables | Cold simplex | GPU engine (1e-4) | then crossover | Crossover vs cold |
 |---|---:|---:|---:|---:|---:|
-| refinery-S | 13,296 | 0.71 s | 1.72 s | 0.15 s | **4.6× faster** |
-| refinery-M | 109,536 | 53 s | 2.84 s | 78 s | 1.5× slower |
-| refinery-L | 406,080 | 730 s | 7.84 s | not finished in 30 min | — |
-| 25fv47 | 1,571 | 0.12 s | 4.04 s | 0.10 s | even |
-| 80bau3b | 9,799 | 0.45 s | 9.55 s | 0.41 s | even |
-| d2q06c | 5,167 | 0.90 s | 17 s | 2.37 s | 2.6× slower |
-| degen3 | 1,818 | 0.24 s | 3.06 s | 0.25 s | even |
-| fit2p | 13,525 | 1.37 s | 3.72 s | 0.07 s | **18.3× faster** |
-| maros-r7 | 9,408 | 0.88 s | 0.49 s | 6.46 s | 7.4× slower |
-| pilot | 3,652 | 0.91 s | 82 s | 2.06 s | 2.3× slower |
-| greenbea | 5,405 | 0.45 s | 300 s | 1.23 s | 2.7× slower |
+| refinery-S | 13,296 | 0.71 s | 1.97 s | 0.09 s | **8.1× faster** |
+| refinery-M | 109,536 | 54 s | 2.90 s | 2.67 s | **20.1× faster** |
+| refinery-L | 406,080 | 706 s | 5.57 s | 39 s | **18.1× faster** |
+| 25fv47 | 1,571 | 0.12 s | 3.29 s | 0.03 s | **4.7× faster** |
+| 80bau3b | 9,799 | 0.43 s | 8.31 s | 0.08 s | **5.4× faster** |
+| d2q06c | 5,167 | 0.88 s | 15 s | 1.94 s | 2.2× slower |
+| degen3 | 1,818 | 0.27 s | 2.72 s | 0.10 s | **2.6× faster** |
+| fit2p | 13,525 | 1.32 s | 2.53 s | 0.09 s | **14.1× faster** |
+| maros-r7 | 9,408 | 0.71 s | 0.36 s | 0.22 s | **3.3× faster** |
+| pilot | 3,652 | 0.93 s | 71 s | 1.97 s | 2.1× slower |
+| greenbea | 5,405 | 0.37 s | 300 s | 0.11 s | **3.5× faster** |
 
 ### MILP — MIPLIB 3
 
 ![MIPLIB](docs/img/miplib.png)
 
-All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves
-41 optimal**, every one matching the known optimum, and finds a feasible solution on **62 of 65**; HiGHS proves 50.
+All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 42
+optimal**, every one matching the known optimum, and finds a feasible solution on **62 of 65**; HiGHS proves 50.
 SAMADHAN finishes **nw04 (87,482 columns), pk1 and qiu** where HiGHS runs out of time, and is faster than HiGHS on
-16 of the models both prove, for example air03 (0.1 s vs 2.8 s), gesa3 (1.0 s vs 3.4 s), cap6000 (0.5 s vs 2.0 s),
-mod008 (0.2 s vs 1.2 s), mod010 (0.08 s vs 0.6 s) and rentacar (3.9 s vs 10.4 s).
+19 of the models both prove, for example air03 (0.8 s vs 2.8 s), gesa3 (1.0 s vs 3.4 s), cap6000 (0.5 s vs 2.0 s),
+mod008 (0.2 s vs 1.2 s), mitre (2.0 s vs 3.0 s) and rentacar (3.8 s vs 10.4 s).
 
 How it got here, each step measured on the same models:
 
@@ -196,10 +197,14 @@ How it got here, each step measured on the same models:
 | + primal heuristics, reliability branching, node propagation, c-MIR cuts | 65 | 40 | 61 | 16.8 s |
 | + stronger presolve (dual fixing, free column singletons), faster refactorisation | 65 | 41 | 62 | 16.0 s |
 | + Forrest–Tomlin basis update, deterministic refactorisation trigger | 65 | 41 | 62 | 16.5 s |
+| + probing, parallel rows, doubleton equations | 65 | 42 | 62 | 15.5 s |
 
 The Forrest–Tomlin update targets large LPs; on these small MILPs it is neutral (the counts are unchanged, single
-models move both ways as the search takes another path: l152lav 34 s → 8 s, misc07 17 s → 49 s). Since it, runs are
-repeatable: the refactorisation trigger no longer reads a clock.
+models move both ways as the search takes another path: l152lav 34 s → 8 s, misc07 17 s → 49 s). Since that change,
+runs are repeatable: the refactorisation trigger no longer reads a clock. The stronger presolve (probing with
+equivalent binaries, parallel rows, doubleton equations) newly solves mitre (2.0 s; probing fixes 4,505 of its
+10,724 columns). Probing costs up to a second where it finds nothing, on set partitioning models (air03 0.1 s → 0.8
+s); p2756 loses the poor incumbent it used to find (a different search path), and l152lav moves from 8 s to 18 s.
 
 The branch-and-cut work finds the first feasible solutions on 10teams, fixnet6, harp2, mkc, p2756 and set1ch,
 newly proves 10teams, pp08a and pp08aCUTS, and cuts solve times sharply on many models (gesa2 21 s → 0.9 s, vpm1
@@ -212,13 +217,16 @@ made things slower on average and are off by default.
 
 **MIPLIB 2017** (50 models of the current benchmark set, 60 s, one thread, gap 1e-4) is much harder, and here HiGHS
 is clearly ahead: it proves **18** optimal and finds a solution on all 50; SAMADHAN proves **5** (markshare_4_0,
-neos8, nw04, pk1, swath1, all correct; nw04, pk1 and markshare_4_0 are not proved by HiGHS in 60 s) and finds a
-solution on 33. On 5 models SAMADHAN ends with the better solution (gen-ip054, mas74, pk1, rmatr100-p10, swath3).
-The gap has two measured causes: presolve (on ex9 HiGHS's presolve removes the whole model, ours only 17 % of the
-rows) and simplex speed on large LPs (ex9's relaxation: HiGHS 12 s, ours still more than 180 s with the
-Forrest–Tomlin update, because its basis solves are dense). Running this set also found two bugs that are now fixed:
-integer columns without any bound in the MPS file must be binary (MIPLIB and HiGHS convention), and a cut round
-whose LP could not be re-solved in time is now rolled back instead of ending the solve.
+neos8, nw04, pk1, swath1, all correct; markshare_4_0, nw04 and pk1 are not proved by HiGHS in 60 s) and finds a
+solution on 35. On 5 models SAMADHAN ends with the better solution (gen-ip054, mas74, pk1, rmatr100-p10, swath3).
+Presolve, the gap measured on this set, now probes binaries, merges parallel rows and substitutes doubleton
+equations: it matches HiGHS's presolve on 30n20b8 (491 × 4,748 against 488 × 4,733) and graph20-20-1rand, beats it
+on air05 (343 × 6,119 against 342 × 6,146) and comes close on neos-860300 and nu25-pr12. ex9 is still out of reach:
+its rows are implications x_j ≤ Σ x_k between binaries, which HiGHS's presolve removes completely by enumerating
+combinations of short rows; ours keeps 33,766 × 8,560 and its LP relaxation does not finish in 900 s (HiGHS 12 s).
+Running this set also found two bugs that are now fixed: integer columns without any bound in the MPS file must be
+binary (MIPLIB and HiGHS convention), and a cut round whose LP could not be re-solved in time is now rolled back
+instead of ending the solve.
 
 ### QP — Maros–Meszaros and refinery QP
 
@@ -245,19 +253,18 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
 
 ## Honest limitations
 
-* On small LPs HiGHS's simplex is still a little faster than ours (Netlib median 0.008 s against 0.012 s,
-  part of it Python-side presolve); the GPU engine pays off from roughly 100k variables.
-* The GPU engine reaches 1e-4…1e-6 relative accuracy. Crossover turns its solution into an exact vertex, but it
-  beats a cold-start simplex on only 2 of 11 test models (fit2p 18×, refinery S 4.6×) and is slower on the 100k+
-  refinery models (M: 78 s against 53 s; L: from 583 s to more than 30 minutes depending on the GPU point, against
-  670–730 s cold, where HiGHS's interior point takes 64 s).
-  Exact vertices at a million variables need a primal-dual push crossover (roadmap).
+* On small LPs HiGHS's simplex is still a little faster than ours (Netlib median 0.008 s against 0.014 s, part of it
+  Python-side presolve); the GPU engine pays off from roughly 100k variables.
+* The GPU engine reaches 1e-4…1e-6 relative accuracy. Crossover turns its solution into an exact vertex and beats a
+  cold start on 9 of 11 test models, but it is still slower on d2q06c and pilot, and the 1.16 M-variable refinery LP
+  has not been crossed over yet (roadmap).
 * The interior-point method factorises A Θ Aᵀ directly: models with dense columns (fit2p) are slow, as there is
   no dense-column splitting yet.
-* Presolve covers the standard primal reductions and dual fixing, but not yet doubleton substitution, dominated or
-  duplicate columns, or coefficient strengthening. The branch-and-cut root bound is still weaker than HiGHS's on
-  some models (no lifted cover or multi-row flow-cover cuts, no probing: p2756, fixnet6), and strong branching costs
-  time on models with very cheap LPs (misc07). One thread.
+* Presolve has the standard primal reductions, dual fixing, parallel rows, doubleton substitution and probing,
+  but no clique table or enumeration of small rows yet (HiGHS's presolve removes all of ex9 that way), and no
+  dominated or duplicate columns or coefficient strengthening. The branch-and-cut root bound is still weaker than
+  HiGHS's on some models (no lifted cover or multi-row flow-cover cuts: p2756, fixnet6), and strong branching
+  costs time on models with very cheap LPs (misc07). One thread.
 
 ## Install without Docker
 
@@ -341,16 +348,26 @@ docs/                idea deck (PDF), figures and the script that draws them
   kept, with a small primal regularisation), after Ruiz scaling. Each iteration forms `A Θ Aᵀ`, scales it to a
   unit diagonal and factorises it once with the C++ sparse LU in symmetric mode (diagonal pivots in
   minimum-degree order, i.e. LDLᵀ), then solves twice with iterative refinement.
-* **Crossover.** From an interior or GPU point: crash basis (columns strictly inside their bounds become
-  basic), dual simplex on randomly perturbed shifted costs until primal feasible, original costs restored
-  exactly, primal simplex clean-up, and a final pass at 100× tighter tolerances. If it is slower than a cold
-  start it hands over to one, so the answer is always an exact vertex.
+* **Crossover.** From an interior or GPU point and its duals: crash basis from the columns strictly inside
+  their bounds, ranked by the indicator p / (p + |d|) (p the distance to the nearer bound, d the reduced cost of
+  the given duals), so the basis is close to dual feasible. A point inside a degenerate optimal face has more
+  such columns than there are rows; the rest stay at their values as superbasics and are pushed to a bound one
+  by one (a blocking basic variable swaps with the column). Basic variables outside their bounds get the violated
+  bound relaxed to their value, the primal simplex reaches the optimum of that relaxed LP, and after the bounds
+  are restored the dual simplex finishes; a final pass runs at 100× tighter tolerances. If the primal phase
+  fails, a dual simplex on perturbed shifted costs takes over, and if the crossover is slower than a cold start
+  it hands over to one, so the answer is always an exact vertex.
 * **Presolve.** Before the C++ core runs, the model is reduced until a pass changes nothing: fixed and empty
   columns are removed, singleton rows become bounds, rows that their activity bounds already satisfy are
   dropped, forcing rows fix their columns, integer columns get tighter bounds from the rows (domain
   propagation), columns that neither their cost nor any row pushes upwards are fixed at a bound (dual fixing),
-  and continuous columns that sit in a single equality row which already implies their bounds are substituted out
-  (free column singletons, recovered in postsolve). The solution is mapped back to the original columns and checked against the original rows.
+  continuous columns that sit in a single equality row which already implies their bounds are substituted out
+  (free column singletons), parallel rows are merged, and doubleton equations a_j x_j + a_k x_k = b substitute a
+  continuous x_k out. When none of this finds more, probing (C++) fixes every binary at 0 and at 1 in turn and
+  propagates: an impossible value fixes the column, bounds implied by both values are kept, and a binary that
+  follows another both ways is replaced by it. Probing effort is a work budget (row entries visited), so the
+  result does not depend on the machine. Substituted columns are recovered in postsolve; the solution is mapped
+  back to the original columns and checked against the original rows.
 * **LP / MILP (C++).** Every row gets a logical variable, so the simplex works on `[A −I]` with column
   bounds, after geometric-mean scaling and equilibration (powers of two). The basis is held as a sparse LU
   factorisation: Markowitz pivot order with threshold pivoting, Forrest–Tomlin updates between
@@ -373,11 +390,9 @@ docs/                idea deck (PDF), figures and the script that draws them
 
 ## Roadmap (SIH build phase)
 
-1. Primal-dual push crossover for million-variable GPU solutions; dense columns in the interior-point
-   method; dual presolve reductions.
-2. Stronger presolve (doubleton and implied-free substitution, dominated and duplicate columns, probing), the
-   measured gap on MIPLIB 2017 (HiGHS's presolve removes all of ex9); lifted cover and flow-cover cuts;
-   parallel tree search.
+1. Crossover at a million variables (the 1.16 M refinery LP); dense columns in the interior-point method.
+2. Clique table and enumeration presolve (ex9), dominated and duplicate columns; lifted cover and flow-cover
+   cuts; parallel tree search.
 3. GPU LP relaxations inside branch-and-bound for very large MILPs; MIQP.
 4. Native CUDA kernels for the PDHG loop; REST service for plant planning systems.
 
