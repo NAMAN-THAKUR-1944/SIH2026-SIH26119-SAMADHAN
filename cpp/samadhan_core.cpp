@@ -1453,7 +1453,7 @@ struct Solver {
     std::vector<std::vector<int>> prop_cols;                       // rows of each column
     std::vector<std::vector<double>> prop_vals;                     // ... and the coefficients there
     std::vector<char> queued;                                       // work array of propagate
-    long prop_work = 0;                                             // row entries visited by propagate (total)
+    long long prop_work = 0;                                        // row-entry operations of probing
 
     void build_propagation() {
         M.rows_of(prop_rows);
@@ -1464,25 +1464,18 @@ struct Solver {
     }
 
     // Returns false if the node is infeasible. Tightened bounds are written to lb/ub and listed in `changed`.
-    // (start_rows: propagate from these rows instead of all rows of the start columns)
     bool propagate(const std::vector<int>& start, std::vector<double>& lb, std::vector<double>& ub,
-                   std::vector<int>& changed, long cap = -1, const std::vector<int>* start_rows = nullptr) {
+                   std::vector<int>& changed) {
         std::vector<int> queue;
         queued.assign(M.m, 0);
-        if (start_rows) {
-            for (int i : *start_rows) if (!queued[i]) { queued[i] = 1; queue.push_back(i); }
-        } else {
-            for (int j : start)
-                for (int i : prop_cols[j]) if (!queued[i]) { queued[i] = 1; queue.push_back(i); }
-        }
-        long work = 0;
-        if (cap < 0) cap = 20L * (M.n + M.m);
+        for (int j : start)
+            for (int i : prop_cols[j]) if (!queued[i]) { queued[i] = 1; queue.push_back(i); }
+        long work = 0, cap = 20L * (M.n + M.m);
         for (size_t qi = 0; qi < queue.size() && work < cap; ++qi) {
             int i = queue[qi];
             queued[i] = 0;
             const auto& row = prop_rows[i];
             work += (long)row.size();
-            prop_work += (long)row.size();
             double mn = 0, mx = 0;
             int mn_inf = 0, mx_inf = 0;
             for (auto& e : row) {
@@ -1527,41 +1520,136 @@ struct Solver {
 
     // ---- probing (presolve): every binary column is tentatively fixed at 0 and at 1 and the fixing propagated
     // through the rows. If one value is infeasible the column takes the other (both: the model is infeasible), and
-    // a bound that both values imply holds for every solution. The most connected columns go first; the run stops
-    // after `seconds`. L/U are the bounds, tightened in place. Returns false if the model is infeasible.
-    // Equivalences found on the way (x_k = x_j, or x_k = 1 - x_j when the sign is -1) go to `equiv` as (k, j, sign).
+    // a bound that both values imply holds for every solution. Equivalences found on the way (x_k = x_j, or
+    // x_k = 1 - x_j when the sign is -1) go to `equiv` as (k, j, sign). The most connected columns go first; the run
+    // stops once the propagation has done `work_limit` row-entry operations (or after `seconds`, a safety net).
+    // L/U are the bounds, tightened in place. Returns false if the model is infeasible.
+    // Row activity bounds are kept incrementally: a bound change updates the rows of its column, and a row is
+    // scanned in full only when its slack drops below the largest |a_k| (u_k - l_k) of its integer columns, the
+    // only case in which it can tighten anything. On set partitioning models, where fixing one column at 1 fixes
+    // thousands at 0, a probe then costs about the columns it touches instead of the whole matrix.
     bool probe(std::vector<double>& L, std::vector<double>& U, double work_limit, double seconds, long& fixed,
                long& tightened, std::vector<std::array<int, 3>>* equiv = nullptr) {
         build_propagation();
         auto stop = Clock::now() + std::chrono::milliseconds((long long)(seconds * 1000));
         prop_work = 0;
-        // Row activity bounds over the global bounds, and the largest |a_k| (u_k - l_k) of the row's integer
-        // columns: fixing a binary can only tighten something in a row whose slack then drops below that range,
-        // so most rows are ruled out in O(1).
-        std::vector<double> amin(M.m), amax(M.m), arange(M.m);
-        std::vector<int> nmin(M.m), nmax(M.m);
+        const int m = M.m, n = M.n;
+        auto contrib = [](double a, double l, double u, double& lo, double& hi) {
+            lo = a > 0 ? a * l : a * u;
+            hi = a > 0 ? a * u : a * l;
+        };
+        // activity bounds over the global bounds L/U (finite part and number of infinite terms) and the largest
+        // |a_k| (u_k - l_k) over the integer columns of the row
+        std::vector<double> amin(m), amax(m), arng(m);
+        std::vector<int> nmin(m), nmax(m);
         auto row_stats = [&](int i) {
             double mn = 0, mx = 0, rg = 0;
             int ni = 0, nx = 0;
             for (auto& e : prop_rows[i]) {
-                double a = e.second, l = L[e.first], u = U[e.first];
-                double lo = a > 0 ? l : u, hi = a > 0 ? u : l;
-                if (std::isfinite(lo)) mn += a * lo; else ++ni;
-                if (std::isfinite(hi)) mx += a * hi; else ++nx;
-                if (M.isint[e.first]) rg = std::max(rg, std::fabs(a) * (u - l));
+                double lo, hi;
+                contrib(e.second, L[e.first], U[e.first], lo, hi);
+                if (std::isfinite(lo)) mn += lo; else ++ni;
+                if (std::isfinite(hi)) mx += hi; else ++nx;
+                if (M.isint[e.first]) rg = std::max(rg, std::fabs(e.second) * (U[e.first] - L[e.first]));
             }
-            amin[i] = mn; amax[i] = mx; nmin[i] = ni; nmax[i] = nx; arange[i] = rg;
+            amin[i] = mn; amax[i] = mx; nmin[i] = ni; nmax[i] = nx; arng[i] = rg;
         };
-        for (int i = 0; i < M.m; ++i) row_stats(i);
+        for (int i = 0; i < m; ++i) row_stats(i);
+        auto tolerance = [&](int i) {
+            double rlo = M.rlo[i], rhi = M.rhi[i];
+            return 1e-6 * (1.0 + std::max(std::fabs(std::isfinite(rlo) ? rlo : 0.0),
+                                          std::fabs(std::isfinite(rhi) ? rhi : 0.0)));
+        };
+        // the same during a probe, for the rows it has touched
+        std::vector<double> pmin(m), pmax(m);
+        std::vector<int> pnmin(m), pnmax(m), touched, queue;
+        std::vector<char> is_touched(m, 0), in_queue(m, 0);
+        std::vector<double> WL = L, WU = U;
+        // column k moves from [l, u] to [nl, nu] in the probe and the activities of its rows follow; false if a row
+        // can no longer be satisfied. Rows that can now tighten something are queued for a full scan.
+        auto update = [&](int k, double l, double u, double nl, double nu) {
+            const auto& rs = prop_cols[k];
+            const auto& vs = prop_vals[k];
+            prop_work += (long long)rs.size();
+            for (size_t t = 0; t < rs.size(); ++t) {
+                int i = rs[t];
+                double a = vs[t], olo, ohi, nlo, nhi;
+                if (!is_touched[i]) {
+                    is_touched[i] = 1; touched.push_back(i);
+                    pmin[i] = amin[i]; pmax[i] = amax[i]; pnmin[i] = nmin[i]; pnmax[i] = nmax[i];
+                }
+                contrib(a, l, u, olo, ohi);
+                contrib(a, nl, nu, nlo, nhi);
+                if (std::isfinite(olo)) pmin[i] -= olo; else --pnmin[i];
+                if (std::isfinite(nlo)) pmin[i] += nlo; else ++pnmin[i];
+                if (std::isfinite(ohi)) pmax[i] -= ohi; else --pnmax[i];
+                if (std::isfinite(nhi)) pmax[i] += nhi; else ++pnmax[i];
+                double rlo = M.rlo[i], rhi = M.rhi[i], tol = tolerance(i);
+                if ((pnmin[i] == 0 && pmin[i] > rhi + tol) || (pnmax[i] == 0 && pmax[i] < rlo - tol)) return false;
+                bool live = (std::isfinite(rhi) && (pnmin[i] == 1 || (pnmin[i] == 0 && rhi - pmin[i] < arng[i]))) ||
+                            (std::isfinite(rlo) && (pnmax[i] == 1 || (pnmax[i] == 0 && pmax[i] - rlo < arng[i])));
+                if (live && !in_queue[i]) { in_queue[i] = 1; queue.push_back(i); }
+            }
+            return true;
+        };
+        // full scan of a queued row: bounds of its integer columns from the rest of the row
+        auto scan = [&](int i, std::vector<int>& changes) {
+            double rlo = M.rlo[i], rhi = M.rhi[i];
+            const auto& row = prop_rows[i];
+            prop_work += (long long)row.size();
+            for (auto& e : row) {
+                int k = e.first;
+                if (!M.isint[k]) continue;
+                double a = e.second, l = WL[k], u = WU[k], lo, hi;
+                contrib(a, l, u, lo, hi);
+                bool flo = std::isfinite(lo), fhi = std::isfinite(hi);
+                bool rmin_ok = pnmin[i] - (flo ? 0 : 1) == 0, rmax_ok = pnmax[i] - (fhi ? 0 : 1) == 0;
+                double rmin = pmin[i] - (flo ? lo : 0.0), rmax = pmax[i] - (fhi ? hi : 0.0);
+                double nl = l, nu = u;
+                if (std::isfinite(rhi) && rmin_ok) {            // a x_k <= rhi - rmin
+                    double v = (rhi - rmin) / a;
+                    if (a > 0) nu = std::min(nu, std::floor(v + 1e-6)); else nl = std::max(nl, std::ceil(v - 1e-6));
+                }
+                if (std::isfinite(rlo) && rmax_ok) {            // a x_k >= rlo - rmax
+                    double v = (rlo - rmax) / a;
+                    if (a > 0) nl = std::max(nl, std::ceil(v - 1e-6)); else nu = std::min(nu, std::floor(v + 1e-6));
+                }
+                if (nl > nu + 1e-9) return false;
+                if (nl > l || nu < u) {
+                    WL[k] = nl; WU[k] = nu;
+                    changes.push_back(k);
+                    if (!update(k, l, u, nl, nu)) return false;
+                }
+            }
+            return true;
+        };
+        // x_j = v and everything it implies (changes: the columns tightened, their bounds left in WL/WU)
+        long long cap = 2LL * (n + m);
+        auto side = [&](int j, double v, std::vector<int>& changes) {
+            changes.clear();
+            long long w0 = prop_work;
+            WL[j] = WU[j] = v;
+            bool ok = update(j, L[j], U[j], v, v);
+            for (size_t qi = 0; ok && qi < queue.size() && prop_work - w0 <= cap; ++qi) {
+                int i = queue[qi];
+                in_queue[i] = 0;
+                ok = scan(i, changes);
+            }
+            for (int i : queue) in_queue[i] = 0;
+            queue.clear();
+            for (int i : touched) is_touched[i] = 0;
+            touched.clear();
+            return ok;
+        };
         std::vector<int> order;
-        for (int j = 0; j < M.n; ++j) if (M.isint[j] && L[j] == 0.0 && U[j] == 1.0) order.push_back(j);
+        for (int j = 0; j < n; ++j) if (M.isint[j] && L[j] == 0.0 && U[j] == 1.0) order.push_back(j);
         std::stable_sort(order.begin(), order.end(),
                          [&](int a, int b) { return prop_cols[a].size() > prop_cols[b].size(); });
-        std::vector<double> WL = L, WU = U, l0(M.n), u0(M.n);
-        std::vector<char> seen0(M.n, 0), dirty(M.m, 0), subst(M.n, 0);    // subst: already expressed by another
-        std::vector<int> ch0, ch1, ch, rows, dirty_rows;
-        long cap = 2L * (M.n + M.m);
-        auto restore = [&](std::vector<int>& changes) {
+        std::vector<double> l0(n), u0(n), l1(n), u1(n);
+        std::vector<char> seen0(n, 0), dirty(m, 0), subst(n, 0);    // subst: already expressed by another column
+        std::vector<int> ch0, ch1, dirty_rows;
+        auto restore = [&](int j, std::vector<int>& changes) {
+            WL[j] = L[j]; WU[j] = U[j];
             for (int k : changes) { WL[k] = L[k]; WU[k] = U[k]; }
         };
         auto tighten = [&](int k, double nl, double nu) {            // global bound change, kept in WL/WU too
@@ -1570,77 +1658,37 @@ struct Solver {
             if (nu < U[k]) { U[k] = WU[k] = nu; ++tightened; t = true; }
             if (t) for (int i : prop_cols[k]) if (!dirty[i]) { dirty[i] = 1; dirty_rows.push_back(i); }
         };
-        // rows of j in which x_j = v can imply something (or that it makes infeasible); false: v is impossible
-        auto live_rows = [&](int j, double v) {
-            rows.clear();
-            for (size_t t = 0; t < prop_cols[j].size(); ++t) {
-                int i = prop_cols[j][t];
-                double a = prop_vals[j][t];
-                double dmin = a * v - (a > 0 ? a * L[j] : a * U[j]), dmax = a * v - (a > 0 ? a * U[j] : a * L[j]);
-                double rlo = M.rlo[i], rhi = M.rhi[i];
-                double tol = 1e-6 * (1.0 + std::max(std::fabs(std::isfinite(rlo) ? rlo : 0.0),
-                                                     std::fabs(std::isfinite(rhi) ? rhi : 0.0)));
-                bool keep = false;
-                if (std::isfinite(rhi)) {
-                    if (nmin[i] == 0) {
-                        double slack = rhi - (amin[i] + dmin);
-                        if (slack < -tol) return false;
-                        if (slack < arange[i]) keep = true;
-                    } else if (nmin[i] == 1) keep = true;
-                }
-                if (!keep && std::isfinite(rlo)) {
-                    if (nmax[i] == 0) {
-                        double slack = (amax[i] + dmax) - rlo;
-                        if (slack < -tol) return false;
-                        if (slack < arange[i]) keep = true;
-                    } else if (nmax[i] == 1) keep = true;
-                }
-                if (keep) rows.push_back(i);
-            }
-            return true;
-        };
-        auto side = [&](int j, double v, std::vector<int>& changes) {
-            changes.clear();
-            if (!live_rows(j, v)) return false;
-            if (rows.empty()) return true;
-            return propagate({}, WL, WU, changes, cap, &rows);
-        };
         for (size_t q = 0; q < order.size(); ++q) {
             if ((double)prop_work > work_limit || ((q & 63) == 0 && Clock::now() > stop)) break;
             for (int i : dirty_rows) { row_stats(i); dirty[i] = 0; }
             dirty_rows.clear();
             int j = order[q];
             if (L[j] != 0.0 || U[j] != 1.0 || subst[j]) continue;    // fixed, or equal to another binary
-            WU[j] = 0.0;
             bool ok0 = side(j, 0.0, ch0);
             for (int k : ch0) { seen0[k] = 1; l0[k] = WL[k]; u0[k] = WU[k]; }
-            WU[j] = U[j]; restore(ch0);
-            WL[j] = 1.0;
+            restore(j, ch0);
             bool ok1 = side(j, 1.0, ch1);
-            std::vector<std::pair<int, std::pair<double, double>>> common;
-            if (ok0 && ok1)
-                for (int k : ch1) {
-                    if (!seen0[k]) continue;
-                    common.push_back({k, {std::min(l0[k], WL[k]), std::max(u0[k], WU[k])}});
-                    // a binary that follows x_j in both directions is x_j (or its complement)
-                    if (equiv && k != j && !subst[k] && L[k] == 0.0 && U[k] == 1.0) {
-                        if (u0[k] == 0.0 && WL[k] == 1.0) { equiv->push_back({k, j, 1}); subst[k] = 1; }
-                        else if (l0[k] == 1.0 && WU[k] == 0.0) { equiv->push_back({k, j, -1}); subst[k] = 1; }
-                    }
-                }
-            WL[j] = L[j]; restore(ch1);
-            for (int k : ch0) seen0[k] = 0;
+            for (int k : ch1) { l1[k] = WL[k]; u1[k] = WU[k]; }
+            restore(j, ch1);
             if (!ok0 && !ok1) return false;
-            if (!ok0 || !ok1) {                                        // one value is impossible: fix the other
+            if (!ok0 || !ok1) {                 // one value is impossible: fix the other, with what it implies
                 double v = ok0 ? 0.0 : 1.0;
                 tighten(j, v, v);
                 ++fixed;
-                ch.clear();
-                if (!propagate({j}, WL, WU, ch)) return false;
-                for (int k : ch) tighten(k, WL[k], WU[k]);
-                continue;
+                if (ok0) { for (int k : ch0) tighten(k, l0[k], u0[k]); }
+                else { for (int k : ch1) tighten(k, l1[k], u1[k]); }
+            } else {
+                for (int k : ch1) {
+                    if (!seen0[k]) continue;
+                    // a binary that follows x_j in both directions is x_j (or its complement)
+                    if (equiv && k != j && !subst[k] && L[k] == 0.0 && U[k] == 1.0) {
+                        if (u0[k] == 0.0 && l1[k] == 1.0) { equiv->push_back({k, j, 1}); subst[k] = 1; continue; }
+                        if (l0[k] == 1.0 && u1[k] == 0.0) { equiv->push_back({k, j, -1}); subst[k] = 1; continue; }
+                    }
+                    tighten(k, std::min(l0[k], l1[k]), std::max(u0[k], u1[k]));
+                }
             }
-            for (auto& e : common) tighten(e.first, e.second.first, e.second.second);
+            for (int k : ch0) seen0[k] = 0;
         }
         return true;
     }

@@ -190,7 +190,7 @@ def solve_core(lp: LP, integer=None, time_limit=300.0, node_limit=50_000_000, cu
         return _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose, FEATURES if features is None else features)
     from .presolve import presolve as run_presolve
     t0 = time.perf_counter()
-    P = run_presolve(lp, probe_work=2e6 * time_limit, probe_seconds=max(1.0, 0.2 * time_limit))
+    P = run_presolve(lp, probe_work=1e6 * time_limit, probe_seconds=max(1.0, 0.2 * time_limit))
     tp = time.perf_counter() - t0
     if verbose:
         print(f"presolve: {P.status}, rows {P.stats.get('rows')}, columns {P.stats.get('cols')}, {tp:.2f} s")

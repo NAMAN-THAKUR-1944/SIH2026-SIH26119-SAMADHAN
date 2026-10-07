@@ -29,7 +29,7 @@ import scipy.sparse as sp
 from .lp import LP
 
 FEAS_TOL = 1e-9    # feasibility tolerance when rows and bounds are compared
-PROBE_WORK = 1.2e8 # probing budget: row entries visited by the propagation (about 1.3 s)
+PROBE_WORK = 6e7   # probing budget: row-entry operations of the propagation (well under a second)
 INT_TOL = 1e-6     # integer rounding tolerance for tightened bounds (relative to the bound)
 
 
