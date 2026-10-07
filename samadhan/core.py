@@ -63,7 +63,7 @@ def _load():
     lib.sm_crossover.argtypes = [ctypes.c_int, ctypes.c_int, P(ctypes.c_int), P(ctypes.c_int), P(ctypes.c_double),
                                  P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double),
                                  P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double),
-                                 P(ctypes.c_double)]
+                                 P(ctypes.c_double), P(ctypes.c_double)]
     lib.sm_lu_create.restype = ctypes.c_void_p
     lib.sm_lu_create.argtypes = [ctypes.c_int, P(ctypes.c_int), P(ctypes.c_int), P(ctypes.c_double), ctypes.c_double,
                                  ctypes.c_int, P(ctypes.c_int)]
@@ -219,10 +219,11 @@ def _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose, features=F
     return _result(st, lp, x, info)
 
 
-def crossover(lp: LP, x0, time_limit=300.0, verbose=False, presolve=True, crash_tol=0.0) -> CoreResult:
-    """Exact optimal vertex of an LP from an approximate solution x0 (for example from the GPU engine): crash basis
-    from x0, dual simplex on shifted costs, primal simplex clean-up. Falls back to a cold-start dual simplex if
-    the crossover does not finish."""
+def crossover(lp: LP, x0, y0=None, time_limit=300.0, verbose=False, presolve=True, crash_tol=0.0) -> CoreResult:
+    """Exact optimal vertex of an LP from an approximate solution x0 and, if given, row duals y0 (for example from
+    the GPU engine; y >= 0 on the >= rows, reduced costs c - K'y): crash basis from x0 (ranked with the reduced
+    costs of y0), primal push of the superbasic columns, dual simplex on shifted costs, primal simplex clean-up.
+    Falls back to a cold-start dual simplex if the crossover does not finish."""
     if lp.integer is not None and lp.integer.any():
         raise ValueError("crossover is for LPs; use solve_core for models with integer variables")
     x0 = np.asarray(x0, np.float64)
@@ -234,13 +235,17 @@ def crossover(lp: LP, x0, time_limit=300.0, verbose=False, presolve=True, crash_
         if P.status != "reduced" or P.lp.K.shape[1] == 0:
             return solve_core(lp, time_limit=time_limit, verbose=verbose)
         lp, x0 = P.lp, x0[P.cols]
+        if y0 is not None:
+            y0 = np.asarray(y0, np.float64)[P.rows]
     lib = _load()
     m, n = lp.K.shape
     a = _model_arrays(lp)
     tp = time.perf_counter() - t0
     opts = np.array([max(time_limit - tp, 0.0), 1 if verbose else 0, crash_tol], np.float64)
     x, info = np.zeros(n), np.zeros(9)
-    st = lib.sm_crossover(n, m, *_model_args(a), _dp(np.ascontiguousarray(x0)), _dp(opts), _dp(x), _dp(info))
+    y0 = None if y0 is None else np.ascontiguousarray(y0, np.float64)
+    st = lib.sm_crossover(n, m, *_model_args(a), _dp(np.ascontiguousarray(x0)), None if y0 is None else _dp(y0),
+                          _dp(opts), _dp(x), _dp(info))
     sys.stdout.flush()
     r = _result(st, lp, x, info)
     if r.status != "optimal":

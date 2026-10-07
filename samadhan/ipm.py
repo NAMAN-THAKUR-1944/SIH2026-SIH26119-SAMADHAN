@@ -255,7 +255,7 @@ def solve_ipm(lp: LP, tol=1e-8, max_iter=200, time_limit=600.0, crossover=False,
     if crossover and (status == "optimal" or info.get("merit", 1.0) < 1e-2):   # crossover finishes the job
         from .core import crossover as run_crossover
         tc = time.perf_counter()
-        cr = run_crossover(lp, x, time_limit=max(time_limit - res.time, 1.0), verbose=verbose)
+        cr = run_crossover(lp, x, y, time_limit=max(time_limit - res.time, 1.0), verbose=verbose)
         if cr.status == "optimal":
             res = IPMResult("optimal", cr.x, y, cr.obj, cr.obj, 0.0, 0.0, res.rel_dual_res, it,
                             time.perf_counter() - t0, True, time.perf_counter() - tc)

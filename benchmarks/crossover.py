@@ -49,7 +49,7 @@ def main():
         ref = cold.obj
         p = PDLP(lp, device=a.device).solve(tol=1e-4, max_iter=5_000_000, time_limit=300)
         t = time.perf_counter()
-        xg = crossover(lp, p.x, time_limit=1800)
+        xg = crossover(lp, p.x, p.y, time_limit=1800)
         tg = time.perf_counter() - t
         if n <= 50_000:
             xi = solve_ipm(lp, crossover=True, time_limit=300)

@@ -223,16 +223,21 @@ def test_presolve_keeps_milp_optimum(seed):
     assert a.status == b.status == "optimal" and rel(a.obj, b.obj) < 1e-9 and violation(lp, a.x) < 1e-6
 
 
-@pytest.mark.parametrize("start", ["gpu", "zeros"])
+@pytest.mark.parametrize("start", ["gpu", "gpu+duals", "zeros"])
 def test_crossover_gives_exact_vertex(start):
-    """GPU solution (1e-4) or a poor starting point -> optimal vertex, equal to HiGHS to 1e-9."""
+    """GPU solution (1e-4, with or without its duals) or a poor starting point -> optimal vertex, equal to HiGHS
+    to 1e-9. The GPU point lies inside a degenerate optimal face, so it has superbasic columns to push."""
     import numpy as np
 
     from samadhan.core import crossover
     from samadhan.verify import violation
     lp = refinery_lp(R=3, C=5, P=4, D=20, T=4, seed=1)
-    x0 = PDLP(lp, device="cpu").solve(tol=1e-4).x if start == "gpu" else np.zeros(lp.K.shape[1])
-    r = crossover(lp, x0)
+    if start == "zeros":
+        x0, y0 = np.zeros(lp.K.shape[1]), None
+    else:
+        g = PDLP(lp, device="cpu").solve(tol=1e-4)
+        x0, y0 = g.x, (g.y if start == "gpu+duals" else None)
+    r = crossover(lp, x0, y0)
     assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9 and violation(lp, r.x) < 1e-9
 
 

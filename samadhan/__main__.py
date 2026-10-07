@@ -32,7 +32,7 @@ def _gpu(lp, a):
           f"time        {r.solve_time:.2f} s solve + {r.setup_time:.2f} s setup on {r.device}")
     if a.crossover and r.status == "optimal" and lp.Q is None:
         from .core import crossover
-        c = crossover(lp, r.x, time_limit=max(a.time_limit - r.solve_time, 1.0), verbose=not a.quiet)
+        c = crossover(lp, r.x, r.y, time_limit=max(a.time_limit - r.solve_time, 1.0), verbose=not a.quiet)
         print(f"crossover   {c.status}: exact vertex, objective {c.obj:.10g}, {c.lp_iters} simplex iterations, "
               f"{c.time:.2f} s (C++ core)")
         return c.status == "optimal"

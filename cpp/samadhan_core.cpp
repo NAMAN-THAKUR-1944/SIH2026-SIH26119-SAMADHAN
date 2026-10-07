@@ -854,10 +854,20 @@ struct Simplex {
         cshift.clear();
     }
 
+    // Superbasic columns: nonbasic, but strictly inside their bounds. While they wait for push_superbasics their
+    // bounds are fixed at their values (the real bounds are kept in sb_lo / sb_hi), so every solve sees them there.
+    std::vector<int> superbasic;
+    std::vector<double> sb_lo, sb_hi;
+
     // crash basis from an approximate solution x0 (structural columns): columns and row activities strictly
-    // inside their bounds become basic (the furthest from a bound first), the rest are placed at the nearer bound
+    // inside their bounds become basic. With approximate reduced costs dj (all columns, logicals last) they are
+    // ranked by the indicator p / (p + |d|), p the distance to the nearer bound, so the basis is made of columns
+    // whose reduced cost is near zero and its duals stay close to the given ones; without, by p alone. On a
+    // degenerate optimal face a first-order point has more such columns than there are rows; the ones that do
+    // not fit stay at their values as superbasics (placing them at a bound would make the basis badly
+    // infeasible). The rest go to the nearer bound.
     void init_from_point(const std::vector<double>& slb, const std::vector<double>& sub,
-                         const std::vector<double>& x0) {
+                         const std::vector<double>& x0, const std::vector<double>& dj = {}) {
         n = M->n; m = M->m; N = n + m;
         c.assign(N, 0.0); lb.assign(N, 0.0); ub.assign(N, 0.0); x.assign(N, 0.0); d.assign(N, 0.0);
         art.assign(N, 0); st.assign(N, AT_LB); ar.assign(N, 0.0); acol.assign(m, 0.0);
@@ -878,9 +888,12 @@ struct Simplex {
                 continue;
             }
             st[j] = std::isfinite(lb[j]) ? AT_LB : std::isfinite(ub[j]) ? AT_UB : AT_ZERO;
-            cand.push_back({std::min(v[j] - lb[j], ub[j] - v[j]), j});
+            double p = std::min(v[j] - lb[j], ub[j] - v[j]);
+            double key = p;
+            if (!dj.empty()) key = std::isfinite(p) ? p / (p + std::fabs(dj[j])) : 1.0;
+            cand.push_back({key, j});
         }
-        std::sort(cand.begin(), cand.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        std::stable_sort(cand.begin(), cand.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
         head.clear();
         for (auto& e : cand) {
             if ((int)head.size() == m) break;
@@ -894,7 +907,118 @@ struct Simplex {
         F.abs_tol = 1e-6;
         refactor_basis();
         F.abs_tol = tol;
+        // nonbasic columns still strictly inside their bounds (no room in the basis, or swapped out by the
+        // repair) become superbasic at their values
+        superbasic.clear();
+        sb_lo.assign(N, 0.0); sb_hi.assign(N, 0.0);
+        for (int j = 0; j < N; ++j) {
+            if (st[j] == BASIC || lb[j] == ub[j]) continue;
+            double tl = opt.crash_tol * (1.0 + std::fabs(lb[j])), tu = opt.crash_tol * (1.0 + std::fabs(ub[j]));
+            if ((std::isfinite(lb[j]) && v[j] <= lb[j] + tl) || (std::isfinite(ub[j]) && v[j] >= ub[j] - tu)) continue;
+            if (!std::isfinite(lb[j]) && !std::isfinite(ub[j]) && v[j] == 0.0) continue;    // free, at zero
+            superbasic.push_back(j);
+            sb_lo[j] = lb[j]; sb_hi[j] = ub[j];
+            lb[j] = ub[j] = v[j]; st[j] = AT_LB;
+        }
+        if (!superbasic.empty()) compute_xB();
         exact_weights(false);
+    }
+
+    // Bound relaxation (crossover): a basic variable outside its bounds gets the violated bound moved to its
+    // value, so the basis is exactly primal feasible for a slightly wider LP and ratio tests stay consistent.
+    // restore_bounds puts the real bounds back (the dual simplex then repairs the violations).
+    std::vector<std::pair<int, double>> relaxed_lo, relaxed_hi;
+    long relax_infeasible_basics() {
+        relaxed_lo.clear(); relaxed_hi.clear();
+        for (int k = 0; k < m; ++k) {
+            int j = head[k];
+            if (x[j] < lb[j]) { relaxed_lo.push_back({j, lb[j]}); lb[j] = x[j]; }
+            else if (x[j] > ub[j]) { relaxed_hi.push_back({j, ub[j]}); ub[j] = x[j]; }
+        }
+        return (long)(relaxed_lo.size() + relaxed_hi.size());
+    }
+    void restore_bounds() {
+        for (auto& e : relaxed_lo) lb[e.first] = e.second;
+        for (auto& e : relaxed_hi) ub[e.first] = e.second;
+        relaxed_lo.clear(); relaxed_hi.clear();
+    }
+
+    // Primal push: every superbasic column moves to one of its bounds, the direction that does not raise the
+    // objective first. A ratio test keeps the basic variables within their bounds; the basic variable that
+    // blocks the move leaves the basis and the column enters in its place. Returns the number of basis changes,
+    // or -1 if a refactorisation failed.
+    long push_superbasics() {
+        if (superbasic.empty()) return 0;
+        compute_duals();
+        long pivots = 0;
+        for (size_t q = 0; q < superbasic.size(); ++q) {
+            int j = superbasic[q];
+            // (refactorise while column j is still held at its value by its fixed bounds)
+            if (want_refactor() && !refactor_basis()) return -1;
+            double v = x[j];
+            lb[j] = sb_lo[j]; ub[j] = sb_hi[j];
+            if (Clock::now() > t_end) {                     // out of time: the rest goes to a bound
+                place_nonbasic(j);
+                continue;
+            }
+            col_alpha(j);
+            double s0 = d[j] < -opt.tol_d ? 1.0 : d[j] > opt.tol_d ? -1.0 : (ub[j] - v <= v - lb[j] ? 1.0 : -1.0);
+            bool done = false;
+            for (int pass = 0; pass < 2 && !done; ++pass) {
+                double s = pass == 0 ? s0 : -s0;
+                double dist = s > 0 ? ub[j] - v : v - lb[j];
+                // Harris two-pass ratio test over the basic variables (x_B moves by -t s alpha)
+                double tmax = INF;
+                for (int k = 0; k < m; ++k) {
+                    double a = s * acol[k];
+                    if (std::fabs(a) < opt.tol_piv) continue;
+                    int jb = head[k];
+                    double room = a > 0 ? x[jb] - lb[jb] : ub[jb] - x[jb];
+                    if (std::isfinite(room)) tmax = std::min(tmax, (std::max(room, 0.0) + opt.tol_p) / std::fabs(a));
+                }
+                int r = -1; double t = 0.0, amax = 0.0;
+                if (tmax < INF) {
+                    for (int k = 0; k < m; ++k) {
+                        double a = s * acol[k];
+                        if (std::fabs(a) < opt.tol_piv) continue;
+                        int jb = head[k];
+                        double room = a > 0 ? x[jb] - lb[jb] : ub[jb] - x[jb];
+                        if (!std::isfinite(room)) continue;
+                        double ratio = std::max(room, 0.0) / std::fabs(a);
+                        if (ratio <= tmax && std::fabs(a) > amax) { amax = std::fabs(a); r = k; t = ratio; }
+                    }
+                }
+                if (std::isfinite(dist) && (r < 0 || dist <= t)) {         // the column reaches its bound
+                    for (int k = 0; k < m; ++k) x[head[k]] -= dist * s * acol[k];
+                    st[j] = s > 0 ? AT_UB : AT_LB;
+                    x[j] = s > 0 ? ub[j] : lb[j];
+                    done = true;
+                } else if (r >= 0) {                                         // a basic variable blocks: swap
+                    int jl = head[r];
+                    bool leave_lb = s * acol[r] > 0;
+                    for (int k = 0; k < m; ++k) x[head[k]] -= t * s * acol[k];
+                    x[j] = v + s * t;
+                    x[jl] = leave_lb ? lb[jl] : ub[jl];
+                    st[jl] = leave_lb ? AT_LB : AT_UB;
+                    st[j] = BASIC;
+                    head[r] = j;
+                    F.replace_column(r, acol[r]);
+                    eta_work += 3.0 * F.eta_nnz();
+                    ++iters; ++since_refactor; ++pivots;
+                    done = true;
+                }
+            }
+            if (!done) {               // free column that nothing blocks in either direction: it goes to zero
+                place_nonbasic(j);
+                double dx = x[j] - v;
+                for (int k = 0; k < m; ++k) x[head[k]] -= dx * acol[k];
+            }
+        }
+        superbasic.clear();
+        if (!refactor_basis()) return -1;
+        w.assign(m, m <= 5000 ? -1.0 : 1.0);
+        exact_weights(false);
+        return pivots;
     }
 };
 
@@ -958,6 +1082,7 @@ struct Solver {
     std::vector<std::vector<std::pair<int, double>>> rowsR;   // row copy of the ORIGINAL model
     int m_orig = 0;
     std::vector<double> colscale;   // x_j (original) = colscale[j] * x_j (scaled)
+    std::vector<double> rowscale;   // row i (scaled) = rowscale[i] * row i (original); y_i (scaled) = y_i / rowscale[i]
 
     // Geometric-mean scaling (four passes over rows and columns), then equilibration so that the largest |a_ij|
     // of every row and column is 1. Factors are rounded to powers of two (no rounding error is introduced);
@@ -995,6 +1120,7 @@ struct Solver {
         }
         for (int i = 0; i < m; ++i) { M.rlo[i] *= rs[i]; M.rhi[i] *= rs[i]; }
         colscale.swap(cs);
+        rowscale.swap(rs);
     }
 
     int solve(Info& info, std::vector<double>& xout) {
@@ -1004,30 +1130,68 @@ struct Solver {
         return status;
     }
 
-    // Crossover: approximate LP solution x0 (e.g. from the GPU engine) -> optimal vertex. Crash basis from x0,
-    // dual simplex on shifted costs until primal feasible, then primal simplex without the shifts, then a final
-    // dual simplex check on a fresh factorisation.
-    int crossover(const std::vector<double>& x0, Info& info, std::vector<double>& xout) {
+    // Crossover: approximate LP solution x0 (and duals y0, if given; e.g. from the GPU engine) -> optimal vertex.
+    // Crash basis from x0, bounds of infeasible basic variables relaxed to their values, primal push of the
+    // superbasic columns to their bounds, primal simplex to the optimum of the relaxed LP, real bounds back and
+    // dual simplex, then a final dual simplex check on a fresh factorisation.
+    int crossover(const std::vector<double>& x0, const std::vector<double>& y0, Info& info, std::vector<double>& xout) {
         scale_model();
         std::vector<double> xs(M.n);
         for (int j = 0; j < M.n; ++j) xs[j] = x0[j] / colscale[j];
+        // reduced costs of the approximate duals in the scaled model (structural columns, then logicals: the
+        // logical of row i is -e_i, so its reduced cost is y_i)
+        std::vector<double> dj;
+        if (!y0.empty()) {
+            dj.assign(M.n + M.m, 0.0);
+            for (int i = 0; i < M.m; ++i) dj[M.n + i] = y0[i] / rowscale[i];
+            for (int j = 0; j < M.n; ++j) {
+                double s = M.c[j];
+                for (int t = M.cp[j]; t < M.cp[j + 1]; ++t) s -= M.cv[t] * dj[M.n + M.ri[t]];
+                dj[j] = s;
+            }
+        }
         t0 = Clock::now();
         S.M = &M; S.opt = opt;
         S.t_end = t0 + std::chrono::milliseconds((long long)(opt.time_limit * 1000));
-        S.init_from_point(M.lb, M.ub, xs);
+        S.init_from_point(M.lb, M.ub, xs, dj);
+        long crash_basic = 0;
+        for (int k = 0; k < S.m; ++k) crash_basic += S.head[k] < S.n;
+        long n_relaxed = S.relax_infeasible_basics();
+        long n_super = (long)S.superbasic.size();
+        long it_push = S.push_superbasics();
+        if (it_push < 0) {
+            info.time = seconds_since(t0);
+            return 5;
+        }
         // iteration budget: a crossover that needs more than this is slower than a cold start (the caller then
         // falls back to one)
         S.opt.max_lp_iter = std::max(5000L, (long)S.m + S.n);
-        long crash_basic = 0;
-        for (int k = 0; k < S.m; ++k) crash_basic += S.head[k] < S.n;
-        S.shift_costs();
-        Result r = S.dual();
-        long it_dual = S.iters;
+        // The pushed basis is primal feasible for the relaxed bounds: primal simplex on the true costs to the
+        // optimum of the relaxed LP, then the real bounds back and the dual simplex from that dual feasible basis.
+        Result r = S.primal();
+        long it_primal = S.iters - it_push, it_dual = 0;
+        S.restore_bounds();
+        bool shifted = false;
         if (r == OPTIMAL) {
-            S.unshift_costs();
-            r = S.refactor_basis() ? S.primal() : NUMERIC;
+            S.w.assign(S.m, S.m <= 5000 ? -1.0 : 1.0);
+            r = S.refactor_full() ? S.dual() : NUMERIC;
+            it_dual = S.iters - it_push - it_primal;
+        } else if (r != TIME_LIMIT && r != ITER_LIMIT) {
+            // primal simplex in trouble: dual simplex on shifted costs from the current basis, then the primal
+            // simplex without the shifts
+            shifted = true;
+            r = S.refactor_basis() ? OPTIMAL : NUMERIC;
+            if (r == OPTIMAL) {
+                S.shift_costs();
+                r = S.dual();
+                it_dual = S.iters - it_push - it_primal;
+            }
+            if (r == OPTIMAL) {
+                S.unshift_costs();
+                r = S.refactor_basis() ? S.primal() : NUMERIC;
+            }
         }
-        long it_primal = S.iters - it_dual;
+        long it_main = S.iters;
         if (r == OPTIMAL) {
             S.w.assign(S.m, 1.0);
             r = S.solve();
@@ -1042,9 +1206,10 @@ struct Solver {
             S.opt = opt;
         }
         if (opt.verbose)
-            std::printf("crossover: %ld structural columns basic in the crash basis, %ld dual + %ld primal + %ld "
-                        "cleanup iterations, %.2f s\n", crash_basic, it_dual, it_primal,
-                        S.iters - it_dual - it_primal, seconds_since(t0));
+            std::printf("crossover: %ld structural columns basic in the crash basis, %ld bounds relaxed, %ld superbasic "
+                        "pushed (%ld basis changes), %ld primal + %ld dual%s + %ld cleanup iterations, %.2f s\n",
+                        crash_basic, n_relaxed, n_super, it_push, it_primal, it_dual,
+                        shifted ? " (shifted costs)" : "", S.iters - it_main, seconds_since(t0));
         info.lp_iters = (double)S.iters;
         info.time = seconds_since(t0);
         if (r != OPTIMAL) return r == TIME_LIMIT ? 3 : r == INFEASIBLE ? 1 : r == UNBOUNDED ? 2 : 5;
@@ -2102,15 +2267,16 @@ SM_API int sm_solve(int n, int m, const int* colptr, const int* rowidx, const do
 // Returns 0 optimal, 1 infeasible, 2 unbounded, 3 time limit, 5 numerical failure; info as for sm_solve.
 SM_API int sm_crossover(int n, int m, const int* colptr, const int* rowidx, const double* vals, const double* c,
                         const double* lb, const double* ub, const double* rlo, const double* rhi, const double* x0,
-                        const double* opts, double* x_out, double* info_out) {
+                        const double* y0, const double* opts, double* x_out, double* info_out) {
     sm::Solver s;
     load_model(s, n, m, colptr, rowidx, vals, c, lb, ub, rlo, rhi);
     s.opt.time_limit = opts[0];
     s.opt.verbose = (int)opts[1];
     if (opts[2] > 0) s.opt.crash_tol = opts[2];
     sm::Info info;
-    std::vector<double> x, xs(x0, x0 + n);
-    int status = s.crossover(xs, info, x);
+    std::vector<double> x, xs(x0, x0 + n), ys;
+    if (y0) ys.assign(y0, y0 + m);
+    int status = s.crossover(xs, ys, info, x);
     for (int j = 0; j < n; ++j) x_out[j] = j < (int)x.size() ? x[j] : 0.0;
     store_info(info, info_out);
     return status;

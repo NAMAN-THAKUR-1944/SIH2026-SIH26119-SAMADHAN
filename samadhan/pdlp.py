@@ -421,7 +421,7 @@ def solve(lp: LP, device="cuda", crossover=False, **kw) -> Result:
     if not crossover or (lp.Q is not None and lp.Q.nnz):
         return r
     from .core import crossover as run_crossover
-    c = run_crossover(lp, r.x, time_limit=max(kw.get("time_limit", 600.0) - r.solve_time, 1.0))
+    c = run_crossover(lp, r.x, r.y, time_limit=max(kw.get("time_limit", 600.0) - r.solve_time, 1.0))
     if c.status != "optimal":
         return r
     return replace(r, status="optimal", x=c.x, primal_obj=c.obj, dual_obj=c.obj, rel_gap=0.0, rel_primal_res=0.0,
