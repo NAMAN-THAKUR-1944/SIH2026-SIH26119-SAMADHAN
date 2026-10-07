@@ -6,12 +6,19 @@ Reductions, repeated until a pass changes nothing:
   * singleton rows  a x_j (= or >=) q  become bounds on x_j (rounded for integer columns);
   * rows whose activity bounds already satisfy them are dropped as redundant;
   * forcing rows (activity bound equal to the right-hand side) fix all their columns at a bound;
+  * parallel rows (one a multiple of the other) are merged into one, where the result is an equality or a >= row;
   * integer columns get tighter bounds from the rows they appear in (domain propagation);
   * free column singletons: a continuous column in a single equality row that already implies its bounds is
     substituted out with the row (its value is recovered from the row in postsolve);
+  * doubleton equations  a_j x_j + a_k x_k = b  with x_k continuous: x_k = (b - a_j x_j) / a_k is substituted into
+    the other rows and the objective, and the bounds of x_k become bounds of x_j;
   * dual fixing: a column that neither its cost nor any row pushes upwards is fixed at its lower bound (and the
     mirror case at its upper bound);
-  * empty columns are fixed at the bound their cost prefers (or prove unboundedness).
+  * empty columns are fixed at the bound their cost prefers (or prove unboundedness);
+  * probing (MILP, when the reductions above find nothing more): every binary column is tentatively fixed at 0 and
+    at 1 and the fixing propagated through the rows (C++ core); an impossible value fixes the column at the other,
+    bounds implied by both values are kept, and a binary that follows another in both cases is substituted by it
+    (x_k = x_j or x_k = 1 - x_j, recovered in postsolve).
 Only the primal solution is mapped back. Models with a quadratic objective are passed through unchanged.
 """
 from dataclasses import dataclass, field, replace
@@ -22,6 +29,7 @@ import scipy.sparse as sp
 from .lp import LP
 
 FEAS_TOL = 1e-9    # feasibility tolerance when rows and bounds are compared
+PROBE_WORK = 1.2e8 # probing budget: row entries visited by the propagation (about 1.3 s)
 INT_TOL = 1e-6     # integer rounding tolerance for tightened bounds (relative to the bound)
 
 
@@ -63,7 +71,44 @@ def _activity(A, l, u):
     return mn, mn_inf, mx, mx_inf
 
 
-def presolve(lp: LP, max_passes=50) -> Presolved:
+def _parallel_rows(S):
+    """Pairs (i, k, lam) of rows of the CSR matrix S (two or more entries) with row k = lam * row i. Rows are grouped by
+    a hash of their pattern and of their values divided by the first one; every pair is then checked exactly."""
+    S = sp.csr_matrix(S)
+    S.sort_indices()
+    m, n = S.shape
+    cnt = np.diff(S.indptr)
+    cand = np.flatnonzero(cnt > 1)
+    if len(cand) < 2:
+        return []
+    rowid = np.repeat(np.arange(m), cnt)
+    first = np.zeros(m)
+    first[cnt > 0] = S.data[S.indptr[:-1][cnt > 0]]
+    scaled = S.data / first[rowid]
+    rng = np.random.default_rng(12345)
+    w1, w2 = rng.random(n), rng.random(n)
+    hp = np.round(np.bincount(rowid, weights=w1[S.indices], minlength=m), 9)
+    hv = np.round(np.bincount(rowid, weights=scaled * w2[S.indices], minlength=m), 7)
+    order = cand[np.lexsort((hv[cand], hp[cand], cnt[cand]))]
+    pairs = []
+    start = 0
+    for t in range(1, len(order) + 1):
+        if t < len(order) and cnt[order[t]] == cnt[order[start]] and hp[order[t]] == hp[order[start]]                 and hv[order[t]] == hv[order[start]]:
+            continue
+        if t - start > 1:
+            head = order[start]
+            hi_, hv_ = S.indices[S.indptr[head]:S.indptr[head + 1]], scaled[S.indptr[head]:S.indptr[head + 1]]
+            for k in order[start + 1:t]:
+                ki, kv = S.indices[S.indptr[k]:S.indptr[k + 1]], scaled[S.indptr[k]:S.indptr[k + 1]]
+                if np.array_equal(ki, hi_) and np.allclose(kv, hv_, rtol=1e-12, atol=0.0):
+                    pairs.append((int(head), int(k), float(first[k] / first[head])))
+        start = t
+    return pairs
+
+
+def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -> Presolved:
+    """probe_work: probing budget per probing call, in row entries visited by the propagation (0: no probing);
+    probe_seconds is only a safety net (the work budget keeps the result independent of the machine)."""
     m, n = lp.K.shape
     if lp.Q is not None and lp.Q.nnz:
         return Presolved("reduced", lp, np.arange(n), np.zeros(n), dict(passes=0), np.arange(m))
@@ -81,7 +126,9 @@ def presolve(lp: LP, max_passes=50) -> Presolved:
     x_fixed = np.zeros(n)
     const = lp.obj_const
     st = dict(passes=0, fixed_cols=0, empty_rows=0, singleton_rows=0, redundant_rows=0, forcing_rows=0,
-              tightened=0, free_singletons=0, dual_fixed=0, empty_cols=0)
+              tightened=0, free_singletons=0, dual_fixed=0, empty_cols=0, probe_fixed=0, probe_tightened=0,
+              probe_equiv=0, parallel_rows=0, doubletons=0)
+    probes_left = 2
     stack = []
     fail = lambda s: Presolved(s, None, np.arange(0), x_fixed, st)
 
@@ -155,6 +202,30 @@ def presolve(lp: LP, max_passes=50) -> Presolved:
                 l[jj] = u[jj] = val[first]             # becomes a fixed column in the next pass
             st["forcing_rows"] += int(f_up.sum() + f_dn.sum()); changed = True
             continue
+        # parallel rows: a_k = lam a_i. Row k becomes a bound on a_i x and is merged into row i when the result is
+        # an equality or a >= row (a true range lo < a_i x < hi cannot be written in this LP form: both stay)
+        merged = 0
+        for il, kl, lam in _parallel_rows(S):
+            i, k = rows[il], rows[kl]
+            if not (row_on[i] and row_on[k]):
+                continue
+            k_lo, k_hi = (lo[k] / lam, hi[k] / lam) if lam > 0 else (hi[k] / lam, lo[k] / lam)
+            new_lo, new_hi = max(lo[i], k_lo), min(hi[i], k_hi)
+            tol = FEAS_TOL * (1.0 + abs(new_lo) if np.isfinite(new_lo) else 1.0)
+            if new_lo > new_hi + 1e3 * tol:
+                return fail("infeasible")
+            if np.isfinite(new_hi):
+                if new_hi - new_lo > tol:
+                    continue
+                v = lo[i] if np.isfinite(hi[i]) else (lo[k] / lam if np.isfinite(hi[k]) else new_lo)
+                lo[i] = hi[i] = v
+            else:
+                lo[i] = new_lo
+            row_on[k] = False
+            merged += 1
+        if merged:
+            st["parallel_rows"] += merged; changed = True
+            continue
         # domain propagation on integer columns
         if isint[cols].any():
             T = S.tocoo()
@@ -193,7 +264,7 @@ def presolve(lp: LP, max_passes=50) -> Presolved:
             p0 = Scsc.indptr[kl]
             il, a = int(Scsc.indices[p0]), float(Scsc.data[p0])
             i = int(rows[il])
-            if i >= lp.n_eq or not row_on[i] or il in done_rows or abs(a) < 1e-9:
+            if not np.isfinite(hi[i]) or not row_on[i] or il in done_rows or abs(a) < 1e-9:
                 continue
             k = int(cols[kl])
             lk, uk = l[k], u[k]
@@ -225,10 +296,69 @@ def presolve(lp: LP, max_passes=50) -> Presolved:
         if subs:
             st["free_singletons"] += subs; changed = True
             continue
+        # doubleton equations: a_j x_j + a_k x_k = b with x_k continuous -> x_k = (b - a_j x_j) / a_k everywhere
+        dbl = np.flatnonzero((cnt == 2) & np.isfinite(hi[rows]))
+        if len(dbl):
+            used = np.zeros(n, bool)
+            ks, js, bs, ajs, aks = [], [], [], [], []
+            for il in dbl:
+                i = rows[il]
+                if not row_on[i]:
+                    continue
+                p0 = S.indptr[il]
+                (j1, j2), (v1, v2) = cols[S.indices[p0:p0 + 2]], S.data[p0:p0 + 2]
+                if used[j1] or used[j2] or v1 == 0.0 or v2 == 0.0:
+                    continue
+                # x_k: a continuous column, the one with the larger coefficient (smaller multiplier)
+                opts = [(k, ak, j, aj) for k, ak, j, aj in ((j2, v2, j1, v1), (j1, v1, j2, v2)) if not isint[k]]
+                if not opts:
+                    continue
+                k, ak, j, aj = max(opts, key=lambda o: abs(o[1]))
+                if abs(aj / ak) > 1e3:
+                    continue
+                b = lo[i]
+                # x_k in [l_k, u_k]  <=>  a_j x_j in [b - a_k u_k, b - a_k l_k]  (ends swapped if a_k < 0)
+                with np.errstate(over="ignore", invalid="ignore"):
+                    e1, e2 = b - ak * u[k], b - ak * l[k]
+                    ylo, yhi = (e1, e2) if ak > 0 else (e2, e1)
+                    nl, nu = (ylo / aj, yhi / aj) if aj > 0 else (yhi / aj, ylo / aj)
+                nl = float(np.nan_to_num(nl, nan=-np.inf, posinf=np.inf, neginf=-np.inf))
+                nu = float(np.nan_to_num(nu, nan=np.inf, posinf=np.inf, neginf=-np.inf))
+                if isint[j]:
+                    nl, nu = _ceil(np.array([nl]))[0], _floor(np.array([nu]))[0]
+                nl, nu = max(l[j], nl), min(u[j], nu)
+                if np.isfinite(nl) and np.isfinite(nu) and nl - nu > FEAS_TOL * (1.0 + abs(nl)):
+                    return fail("infeasible")
+                l[j], u[j] = nl, max(nl, nu)
+                used[j] = used[k] = True
+                ks.append(k); js.append(j); bs.append(b); ajs.append(aj); aks.append(ak)
+                row_on[i] = False
+            if ks:
+                ks, js = np.array(ks), np.array(js)
+                bs, ajs, aks = np.array(bs), np.array(ajs), np.array(aks)
+                keep = np.ones(n, bool)
+                keep[ks] = False
+                diag = np.flatnonzero(keep)
+                T = sp.csc_matrix((np.concatenate([np.ones(len(diag)), -ajs / aks]),
+                                   (np.concatenate([diag, ks]), np.concatenate([diag, js]))), shape=(n, n))
+                b0 = np.zeros(n)
+                b0[ks] = bs / aks
+                shift = A @ b0
+                lo -= shift
+                hi -= shift
+                const += float(c @ b0)
+                c = T.T @ c
+                A = sp.csr_matrix(A @ T)
+                A.eliminate_zeros()
+                for k, j, b, aj, ak in zip(ks, js, bs, ajs, aks):
+                    col_on[k] = False
+                    stack.append((int(k), float(b), np.array([j]), np.array([aj]), float(ak)))
+                st["doubletons"] += len(ks); changed = True
+                continue
         # dual fixing: if the cost does not reward increasing a column and no row needs it larger (no down-lock),
         # some optimal solution has it at its lower bound (and symmetrically at the upper bound)
         T = S.tocoo()
-        eqr = rows[T.row] < lp.n_eq
+        eqr = np.isfinite(hi[rows[T.row]])                 # equality rows (the only ones with a finite upper side)
         down = np.bincount(T.col, weights=(eqr | (T.data > 0)).astype(float), minlength=len(cols))
         up = np.bincount(T.col, weights=(eqr | (T.data < 0)).astype(float), minlength=len(cols))
         cc, lc, uc = c[cols], l[cols], u[cols]
@@ -248,12 +378,55 @@ def presolve(lp: LP, max_passes=50) -> Presolved:
             if not np.all(np.isfinite(val)):
                 return fail("unbounded")
             fix(ec, val); st["empty_cols"] += len(ec); changed = True
+        if not changed and probes_left and probe_work > 0 and isint[cols].any():
+            probes_left -= 1
+            from .core import probe
+            infeasible, nl, nu, fx, tg, eqv, _ = probe(S, lo[rows], hi[rows], isint[cols], l[cols], u[cols],
+                                                       probe_work, probe_seconds)
+            if infeasible:
+                return fail("infeasible")
+            if fx or tg:
+                l[cols], u[cols] = nl, nu
+                st["probe_fixed"] += fx; st["probe_tightened"] += tg; changed = True
+            if len(eqv):
+                # x_k = x_r (sign 1) or 1 - x_r (sign -1), r found by following the chain k -> j -> ...
+                link = {int(cols[k]): (int(cols[j]), int(sg)) for k, j, sg in eqv}
+                ks, rs, signs = [], [], []
+                for k in link:
+                    r, sg = k, 1
+                    while r in link:
+                        r, t = link[r]
+                        sg *= t
+                    ks.append(k); rs.append(r); signs.append(sg)
+                ks, rs, signs = np.array(ks), np.array(rs), np.array(signs, float)
+                keep = np.ones(n, bool)
+                keep[ks] = False
+                diag = np.flatnonzero(keep)
+                T = sp.csc_matrix((np.concatenate([np.ones(len(diag)), signs]),
+                                   (np.concatenate([diag, ks]), np.concatenate([diag, rs]))), shape=(n, n))
+                b0 = np.zeros(n)
+                b0[ks] = (signs < 0).astype(float)
+                shift = A @ b0
+                lo -= shift
+                hi -= shift
+                const += float(c @ b0)
+                c = T.T @ c
+                A = sp.csr_matrix(A @ T)
+                A.eliminate_zeros()
+                for k, r, sg in zip(ks, rs, signs):         # the bounds of x_k now restrict x_r
+                    if sg > 0:
+                        l[r], u[r] = max(l[r], l[k]), min(u[r], u[k])
+                    else:
+                        l[r], u[r] = max(l[r], 1.0 - u[k]), min(u[r], 1.0 - l[k])
+                    col_on[k] = False
+                    stack.append((int(k), float(sg < 0), np.array([r]), np.array([1.0 if sg < 0 else -1.0]), 1.0))
+                st["probe_equiv"] += len(ks); changed = True
         if not changed:
             break
 
     rows, cols = np.flatnonzero(row_on), np.flatnonzero(col_on)
     S = A[rows][:, cols].tocsr()
-    eq = rows < lp.n_eq
+    eq = np.isfinite(hi[rows])
     order = np.concatenate([np.flatnonzero(eq), np.flatnonzero(~eq)])
     S, q = S[order], lo[rows][order]
     names = [lp.col_names[j] for j in cols] if lp.col_names else []

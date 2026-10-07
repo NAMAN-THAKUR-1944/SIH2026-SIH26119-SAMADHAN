@@ -175,11 +175,75 @@ def test_presolve_reductions():
     assert st["redundant_rows"] >= 1 and st["forcing_rows"] + st["empty_cols"] + st["dual_fixed"] >= 2
     assert P.lp.K.shape[1] <= 2
     ref = solve_highs(lp)["obj"]                       # x = (2, 4, 0, 0, 0, 3): 2 + 4 - 3 = 3
-    r = solve_highs(P.lp)
-    assert r["obj"] == pytest.approx(ref) == pytest.approx(3.0)
+    red = P.lp.obj_const if P.lp.K.shape[1] == 0 else solve_highs(P.lp)["obj"]      # may reduce to nothing
+    assert red == pytest.approx(ref) == pytest.approx(3.0)
     from samadhan.core import solve_core
     rc = solve_core(lp)
     assert rc.status == "optimal" and rc.obj == pytest.approx(3.0) and violation(lp, rc.x) < 1e-9
+
+
+def _presolve_check(lp, stat):
+    """The reduction `stat` fires, and solve_core (presolve on) reaches the HiGHS optimum with a feasible point."""
+    from samadhan.core import solve_core
+    from samadhan.presolve import presolve
+    from samadhan.verify import violation
+    P = presolve(lp)
+    assert P.status == "reduced" and P.stats[stat] >= 1
+    r = solve_core(lp)
+    assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9 and violation(lp, r.x) < 1e-9
+    return P
+
+
+def test_presolve_doubleton_equation():
+    """x2 = 2 x0 - 1 (row 0, x2 continuous in [0, 5]) is substituted into the other rows; its bounds give
+    0.5 <= x0 <= 3."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    from samadhan.lp import LP
+    inf = np.inf
+    K = sp.csr_matrix(np.array([[2.0, 0, -1, 0],         # eq: 2 x0 - x2 = 1
+                                [1.0, 1, 1, 0],          # x0 + x1 + x2 >= 4
+                                [0.0, -1, 2, 1],         # -x1 + 2 x2 + x3 >= 1
+                                [-1.0, 0, -1, -1]]))     # -x0 - x2 - x3 >= -9
+    lp = LP(np.array([3.0, 1, 2, 1]), K, np.array([1.0, 4, 1, -9]), 1, np.zeros(4), np.array([inf, 2, 5, inf]))
+    P = _presolve_check(lp, "doubletons")
+    assert P.lp.K.shape[1] <= 3
+
+
+def test_presolve_parallel_rows():
+    """Row 1 = 2 x row 0 (tighter: becomes the bound), row 2 = -row 0 with the same value (the pair becomes an
+    equality)."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    from samadhan.lp import LP
+    K = sp.csr_matrix(np.array([[1.0, 2, 1],             # x0 + 2 x1 + x2 >= 2
+                                [2.0, 4, 2],             # 2 x0 + 4 x1 + 2 x2 >= 6  (x0 + 2 x1 + x2 >= 3)
+                                [-1.0, -2, -1],          # -x0 - 2 x1 - x2 >= -3   (x0 + 2 x1 + x2 <= 3)
+                                [1.0, -1, 0]]))          # x0 - x1 >= -1
+    lp = LP(np.array([1.0, 1, 3]), K, np.array([2.0, 6, -3, -1]), 0, np.zeros(3), np.full(3, 10.0))
+    P = _presolve_check(lp, "parallel_rows")
+    assert P.stats["parallel_rows"] >= 2
+
+
+def test_presolve_probing():
+    """Binaries: y0 = 1 forces y1 = 1 (row 0) and y1 = 0 (row 1), which single rows cannot see, so probing fixes
+    y0 = 0 (directly, or as an implication of both values of y1); y2 follows y1 both ways (rows 2 and 3), so y2 is
+    substituted by y1. Optimum y = (0, 1, 1, 0), cost 3."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    from samadhan.lp import LP
+    K = sp.csr_matrix(np.array([[-1.0, 1, 0, 0],         # y0 <= y1
+                                [-1.0, -1, 0, 0],        # y0 + y1 <= 1
+                                [0.0, 1, -1, 0],         # y2 <= y1
+                                [0.0, -1, 1, 0],         # y1 <= y2
+                                [0.0, 1, 1, 1]]))        # y1 + y2 + y3 >= 1
+    lp = LP(np.array([-1.0, 2, 1, 4]), K, np.array([0.0, -1, 0, 0, 1]), 0, np.zeros(4), np.ones(4),
+            integer=np.ones(4, bool))
+    P = _presolve_check(lp, "probe_equiv")
+    assert P.stats["probe_fixed"] + P.stats["probe_tightened"] >= 1 and P.x_fixed[0] == 0.0
 
 
 def test_presolve_free_singleton_and_dual_fixing():

@@ -77,6 +77,11 @@ def _load():
     lib.sm_lu_check.argtypes = [ctypes.c_int, P(ctypes.c_int), P(ctypes.c_int), P(ctypes.c_double), ctypes.c_int,
                                 P(ctypes.c_int), P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double),
                                 P(ctypes.c_int)]
+    lib.sm_probe.restype = ctypes.c_int
+    lib.sm_probe.argtypes = [ctypes.c_int, ctypes.c_int, P(ctypes.c_int), P(ctypes.c_int), P(ctypes.c_double),
+                             P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_char), P(ctypes.c_double),
+                             P(ctypes.c_double), ctypes.c_double, ctypes.c_double, P(ctypes.c_double),
+                             P(ctypes.c_int)]
     _lib = lib
     return lib
 
@@ -116,6 +121,28 @@ class SparseLU:
         if getattr(self, "_h", None):
             self._lib.sm_lu_free(self._h)
             self._h = None
+
+
+def probe(A, rlo, rhi, isint, lb, ub, work_limit=1e8, seconds=60.0):
+    """Probing on the binary columns of  rlo <= A x <= rhi,  lb <= x <= ub  (integer columns isint) by the C++
+    core, until the propagation has visited `work_limit` row entries (deterministic) or after `seconds` (a safety
+    net). Returns (infeasible, lb, ub, columns fixed, bounds tightened, equivalences, work) with equivalences an
+    array of rows (k, j, sign): x_k = x_j (sign 1) or x_k = 1 - x_j (sign -1)."""
+    lib = _load()
+    A = sp.csc_matrix(A, dtype=np.float64)
+    A.sum_duplicates(); A.sort_indices()
+    m, n = A.shape
+    cp, ri = np.ascontiguousarray(A.indptr, np.int32), np.ascontiguousarray(A.indices, np.int32)
+    v = np.ascontiguousarray(A.data, np.float64)
+    rl, rh = np.ascontiguousarray(rlo, np.float64), np.ascontiguousarray(rhi, np.float64)
+    ints = np.ascontiguousarray(isint, np.int8)
+    lo, up = np.array(lb, np.float64), np.array(ub, np.float64)
+    stats = np.zeros(4)
+    eq = np.zeros(3 * max(n, 1), np.int32)
+    st = lib.sm_probe(n, m, _ip(cp), _ip(ri), _dp(v), _dp(rl), _dp(rh),
+                      ints.ctypes.data_as(ctypes.POINTER(ctypes.c_char)), _dp(lo), _dp(up), float(work_limit),
+                      float(seconds), _dp(stats), _ip(eq))
+    return st == 1, lo, up, int(stats[0]), int(stats[1]), eq[:3 * int(stats[2])].reshape(-1, 3), int(stats[3])
 
 
 def lu_check(B, b, d, replace=()):
@@ -163,7 +190,7 @@ def solve_core(lp: LP, integer=None, time_limit=300.0, node_limit=50_000_000, cu
         return _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose, FEATURES if features is None else features)
     from .presolve import presolve as run_presolve
     t0 = time.perf_counter()
-    P = run_presolve(lp)
+    P = run_presolve(lp, probe_work=2e6 * time_limit, probe_seconds=max(1.0, 0.2 * time_limit))
     tp = time.perf_counter() - t0
     if verbose:
         print(f"presolve: {P.status}, rows {P.stats.get('rows')}, columns {P.stats.get('cols')}, {tp:.2f} s")
