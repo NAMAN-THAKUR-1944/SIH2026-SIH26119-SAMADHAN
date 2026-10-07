@@ -128,7 +128,7 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
     st = dict(passes=0, fixed_cols=0, empty_rows=0, singleton_rows=0, redundant_rows=0, forcing_rows=0,
               tightened=0, free_singletons=0, dual_fixed=0, empty_cols=0, probe_fixed=0, probe_tightened=0,
               probe_equiv=0, parallel_rows=0, doubletons=0)
-    probes_left = 2
+    probes_left = parallel_left = 2                 # expensive steps: only when a pass finds nothing else
     stack = []
     fail = lambda s: Presolved(s, None, np.arange(0), x_fixed, st)
 
@@ -201,30 +201,6 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
                 jj, first = np.unique(j, return_index=True)
                 l[jj] = u[jj] = val[first]             # becomes a fixed column in the next pass
             st["forcing_rows"] += int(f_up.sum() + f_dn.sum()); changed = True
-            continue
-        # parallel rows: a_k = lam a_i. Row k becomes a bound on a_i x and is merged into row i when the result is
-        # an equality or a >= row (a true range lo < a_i x < hi cannot be written in this LP form: both stay)
-        merged = 0
-        for il, kl, lam in _parallel_rows(S):
-            i, k = rows[il], rows[kl]
-            if not (row_on[i] and row_on[k]):
-                continue
-            k_lo, k_hi = (lo[k] / lam, hi[k] / lam) if lam > 0 else (hi[k] / lam, lo[k] / lam)
-            new_lo, new_hi = max(lo[i], k_lo), min(hi[i], k_hi)
-            tol = FEAS_TOL * (1.0 + abs(new_lo) if np.isfinite(new_lo) else 1.0)
-            if new_lo > new_hi + 1e3 * tol:
-                return fail("infeasible")
-            if np.isfinite(new_hi):
-                if new_hi - new_lo > tol:
-                    continue
-                v = lo[i] if np.isfinite(hi[i]) else (lo[k] / lam if np.isfinite(hi[k]) else new_lo)
-                lo[i] = hi[i] = v
-            else:
-                lo[i] = new_lo
-            row_on[k] = False
-            merged += 1
-        if merged:
-            st["parallel_rows"] += merged; changed = True
             continue
         # domain propagation on integer columns
         if isint[cols].any():
@@ -378,6 +354,32 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
             if not np.all(np.isfinite(val)):
                 return fail("unbounded")
             fix(ec, val); st["empty_cols"] += len(ec); changed = True
+        # parallel rows: a_k = lam a_i. Row k becomes a bound on a_i x and is merged into row i when the result is
+        # an equality or a >= row (a true range lo < a_i x < hi cannot be written in this LP form: both stay)
+        merged = 0
+        for il, kl, lam in (_parallel_rows(S) if not changed and parallel_left else []):
+            i, k = rows[il], rows[kl]
+            if not (row_on[i] and row_on[k]):
+                continue
+            k_lo, k_hi = (lo[k] / lam, hi[k] / lam) if lam > 0 else (hi[k] / lam, lo[k] / lam)
+            new_lo, new_hi = max(lo[i], k_lo), min(hi[i], k_hi)
+            tol = FEAS_TOL * (1.0 + abs(new_lo) if np.isfinite(new_lo) else 1.0)
+            if new_lo > new_hi + 1e3 * tol:
+                return fail("infeasible")
+            if np.isfinite(new_hi):
+                if new_hi - new_lo > tol:
+                    continue
+                v = lo[i] if np.isfinite(hi[i]) else (lo[k] / lam if np.isfinite(hi[k]) else new_lo)
+                lo[i] = hi[i] = v
+            else:
+                lo[i] = new_lo
+            row_on[k] = False
+            merged += 1
+        if not changed and parallel_left:
+            parallel_left -= 1
+        if merged:
+            st["parallel_rows"] += merged; changed = True
+            continue
         if not changed and probes_left and probe_work > 0 and isint[cols].any():
             probes_left -= 1
             from .core import probe
@@ -388,6 +390,7 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
             if fx or tg:
                 l[cols], u[cols] = nl, nu
                 st["probe_fixed"] += fx; st["probe_tightened"] += tg; changed = True
+                parallel_left = max(parallel_left, 1)     # fixed columns can leave rows parallel
             if len(eqv):
                 # x_k = x_r (sign 1) or 1 - x_r (sign -1), r found by following the chain k -> j -> ...
                 link = {int(cols[k]): (int(cols[j]), int(sg)) for k, j, sg in eqv}
