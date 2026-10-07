@@ -23,8 +23,8 @@ SRC = ROOT.parent / "cpp" / "samadhan_core.cpp"
 LIBDIR = ROOT / "_lib"
 LIBNAME = "samadhan_core.dll" if os.name == "nt" else "libsamadhan_core.so"
 # branch-and-cut features (bit mask): 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
-# 16 node domain propagation, 32 c-MIR cuts
-FEATURES = 59         # all but cover cuts, which cost more than they gave on MIPLIB 3 (ablation)
+# 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate
+FEATURES = 123        # all but cover cuts, which cost more than they gave on MIPLIB 3 (ablation)
 STATUS = {0: "optimal", 1: "infeasible", 2: "unbounded", 3: "time_limit", 4: "node_limit", 5: "numerical_error",
           6: "no_solution_found"}
 _lib = None

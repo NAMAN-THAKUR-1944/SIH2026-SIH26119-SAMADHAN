@@ -8,7 +8,7 @@ import scipy.sparse as sp
 from .lp import LP
 
 
-def solve_highs(lp: LP, solver="choose", time_limit=600.0, threads=0):
+def solve_highs(lp: LP, solver="choose", time_limit=600.0, threads=0, gap=None):
     m, n = lp.K.shape
     A = lp.K.tocsc()
     h = highspy.Highs()
@@ -17,6 +17,8 @@ def solve_highs(lp: LP, solver="choose", time_limit=600.0, threads=0):
     h.setOptionValue("time_limit", float(time_limit))
     if threads:
         h.setOptionValue("threads", threads)
+    if gap is not None:
+        h.setOptionValue("mip_rel_gap", float(gap))
     model = highspy.HighsLp()
     model.num_col_, model.num_row_ = n, m
     model.col_cost_ = lp.c
@@ -44,5 +46,8 @@ def solve_highs(lp: LP, solver="choose", time_limit=600.0, threads=0):
     h.run()
     elapsed = time.perf_counter() - t0
     status = h.modelStatusToString(h.getModelStatus())
-    obj = h.getInfo().objective_function_value
-    return dict(status=status, obj=obj, time=elapsed)
+    info = h.getInfo()
+    out = dict(status=status, obj=info.objective_function_value, time=elapsed)
+    if lp.integer is not None and lp.integer.any():
+        out.update(bound=info.mip_dual_bound, gap=info.mip_gap, nodes=int(info.mip_node_count))
+    return out

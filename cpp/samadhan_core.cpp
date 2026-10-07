@@ -48,8 +48,8 @@ static double seconds_since(Clock::time_point t0) {
 struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
-    int features = 59;           // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
-                                 // 16 node domain propagation, 32 c-MIR cuts
+    int features = 123;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
+                                 // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
@@ -1272,6 +1272,7 @@ struct Solver {
 
     // Complete an integer assignment xr: fix the integer columns at xr, solve the LP over the continuous columns
     // with the original costs, and offer the result as an incumbent. The LP is restored afterwards.
+    Result last_completion = OPTIMAL;            // LP status of the last complete_rounding (diagnostics)
     bool complete_rounding(const std::vector<double>& xr, const std::vector<double>& c0, bool has_cont) {
         if (!has_cont) {
             double before = inc_obj;
@@ -1284,8 +1285,8 @@ struct Solver {
             if (M.isint[j]) { S.lb[j] = xr[j]; S.ub[j] = xr[j]; }
         }
         double before = inc_obj;
-        if (S.refactor_full() && S.dual() == OPTIMAL)
-            try_incumbent(std::vector<double>(S.x.begin(), S.x.begin() + M.n));
+        last_completion = S.refactor_full() ? S.dual() : NUMERIC;
+        if (last_completion == OPTIMAL) try_incumbent(std::vector<double>(S.x.begin(), S.x.begin() + M.n));
         restore_lp(saved);
         return inc_obj < before;
     }
@@ -1424,6 +1425,81 @@ struct Solver {
         }
     }
 
+    // Fix-and-propagate: the integer columns are fixed one by one and every fixing is propagated through the rows
+    // (continuous columns included); a value that the propagation proves impossible is undone and the other side
+    // of the LP value tried. With every integer column fixed, one LP over the continuous columns completes the
+    // point. One propagation per fixing and a single LP, so it finds a first solution on models with thousands of
+    // binaries where diving and the pump need too many LPs. Two orders: the rounded LP point, most integral
+    // column first; and the strongest LP decisions first (largest LP value, rounded up once it is clearly
+    // positive), which keeps the decisions a time-indexed LP spreads thinly over many periods.
+    void fix_and_propagate(long lp_budget) {
+        for (int mode = 0; mode < 2; ++mode)
+            with_budget(lp_budget, 0.08 * opt.time_limit, [&]() { fix_propagate_body(mode); });
+    }
+
+    void fix_propagate_body(int mode) {
+        if ((int)prop_rows.size() != M.m) build_propagation();
+        const int n = M.n;
+        std::vector<double> L(S.lb.begin(), S.lb.begin() + n), U(S.ub.begin(), S.ub.begin() + n);
+        for (int j = 0; j < n; ++j) if (S.art[j]) { L[j] = root_lb[j]; U[j] = root_ub[j]; }   // not the boxes
+        std::vector<int> order;
+        for (int j = 0; j < n; ++j) if (M.isint[j] && L[j] < U[j]) order.push_back(j);
+        auto frac = [&](int j) { return std::fabs(S.x[j] - std::round(S.x[j])); };
+        if (mode == 0)
+            std::stable_sort(order.begin(), order.end(), [&](int a, int b) { return frac(a) < frac(b); });
+        else
+            std::stable_sort(order.begin(), order.end(),
+                             [&](int a, int b) { return S.x[a] - L[a] > S.x[b] - L[b]; });
+        std::vector<BoundTrail> trail;
+        std::vector<int> changed;
+        auto t_fp = Clock::now();
+        long long w_fp = fp_work;
+        auto undo = [&](size_t mark) {
+            while (trail.size() > mark) {
+                L[trail.back().j] = trail.back().l; U[trail.back().j] = trail.back().u;
+                trail.pop_back();
+            }
+        };
+        auto fix = [&](int j, double v) {
+            size_t mark = trail.size();
+            trail.push_back({j, L[j], U[j]});
+            L[j] = U[j] = v;
+            changed.clear();
+            if (propagate({j}, L, U, changed, &trail, true)) return true;
+            undo(mark);
+            return false;
+        };
+        for (size_t q = 0; q < order.size(); ++q) {
+            int j = order[q];
+            if (L[j] == U[j]) continue;                          // fixed by the propagation of an earlier column
+            if ((q & 255) == 0 && Clock::now() > S.t_end) return;
+            double x = S.x[j];
+            double v = std::min(U[j], std::max(L[j], mode == 0 ? std::round(x) : std::ceil(x - 0.1)));
+            if (fix(j, v)) continue;
+            double w = x >= v ? v + 1.0 : v - 1.0;               // the other side of the LP value
+            if (w < L[j] || w > U[j]) w = x >= v ? v - 1.0 : v + 1.0;
+            if (w < L[j] || w > U[j] || !fix(j, w)) {            // both sides impossible: give up
+                if (opt.verbose)
+                    std::printf("  fix-and-propagate (%s): stuck after %zu of %zu columns\n",
+                                mode == 0 ? "rounded" : "strongest first", q, order.size());
+                return;
+            }
+        }
+        std::vector<double> xr(S.x.begin(), S.x.begin() + n), c0(S.c.begin(), S.c.begin() + n);
+        bool has_cont = false;
+        for (int j = 0; j < n; ++j) {
+            if (M.isint[j]) xr[j] = L[j]; else has_cont = true;
+        }
+        double before = inc_obj;
+        double t_prop = seconds_since(t_fp);
+        complete_rounding(xr, c0, has_cont);
+        if (opt.verbose)
+            std::printf("  fix-and-propagate (%s): all %zu columns fixed (propagation %lld entries, %.2f s), %s\n",
+                        mode == 0 ? "rounded" : "strongest first", order.size(), fp_work - w_fp, t_prop,
+                        inc_obj < before ? "new incumbent" : last_completion == INFEASIBLE ? "LP infeasible" :
+                        last_completion == OPTIMAL ? "LP point rejected" : "LP not finished");
+    }
+
     // Reduced-cost fixing with the root LP: a nonbasic integer column whose reduced cost shows that moving it by
     // k units would push the LP bound past the incumbent cannot move that far in any better solution, so its
     // global bound is tightened. Returns the number of tightened bounds.
@@ -1454,6 +1530,7 @@ struct Solver {
     std::vector<std::vector<double>> prop_vals;                     // ... and the coefficients there
     std::vector<char> queued;                                       // work array of propagate
     long long prop_work = 0;                                        // row-entry operations of probing
+    long long fp_work = 0;                                          // row entries visited by propagate()
 
     void build_propagation() {
         M.rows_of(prop_rows);
@@ -1463,19 +1540,23 @@ struct Solver {
             for (auto& e : prop_rows[i]) { prop_cols[e.first].push_back(i); prop_vals[e.first].push_back(e.second); }
     }
 
-    // Returns false if the node is infeasible. Tightened bounds are written to lb/ub and listed in `changed`.
+    // Returns false if the node is infeasible. Tightened bounds are written to lb/ub and listed in `changed`; with
+    // a trail, the old bounds of every tightened column are pushed there first (so the caller can undo). With
+    // `continuous`, continuous columns are tightened too (only by a noticeable step, so it cannot crawl).
+    struct BoundTrail { int j; double l, u; };
     bool propagate(const std::vector<int>& start, std::vector<double>& lb, std::vector<double>& ub,
-                   std::vector<int>& changed) {
+                   std::vector<int>& changed, std::vector<BoundTrail>* trail = nullptr, bool continuous = false) {
         std::vector<int> queue;
         queued.assign(M.m, 0);
         for (int j : start)
             for (int i : prop_cols[j]) if (!queued[i]) { queued[i] = 1; queue.push_back(i); }
-        long work = 0, cap = 20L * (M.n + M.m);
+        long work = 0, cap = (continuous ? 200L : 20L) * (M.n + M.m);
         for (size_t qi = 0; qi < queue.size() && work < cap; ++qi) {
             int i = queue[qi];
             queued[i] = 0;
             const auto& row = prop_rows[i];
             work += (long)row.size();
+            fp_work += (long long)row.size();
             double mn = 0, mx = 0;
             int mn_inf = 0, mx_inf = 0;
             for (auto& e : row) {
@@ -1490,7 +1571,8 @@ struct Solver {
             if ((mn_inf == 0 && mn > rhi + tol) || (mx_inf == 0 && mx < rlo - tol)) return false;
             for (auto& e : row) {
                 int j = e.first;
-                if (!M.isint[j]) continue;
+                bool integral = M.isint[j];
+                if (!integral && !continuous) continue;
                 double a = e.second, l = lb[j], u = ub[j];
                 double cmin = a > 0 ? a * l : a * u, cmax = a > 0 ? a * u : a * l;
                 bool fmin = std::isfinite(cmin), fmax = std::isfinite(cmax);
@@ -1498,16 +1580,28 @@ struct Solver {
                 bool rmin_ok = mn_inf - (fmin ? 0 : 1) == 0, rmax_ok = mx_inf - (fmax ? 0 : 1) == 0;
                 double rmin = mn - (fmin ? cmin : 0.0), rmax = mx - (fmax ? cmax : 0.0);
                 double nl = l, nu = u;
+                auto down = [&](double v) { return integral ? std::floor(v + 1e-6) : v; };
+                auto up = [&](double v) { return integral ? std::ceil(v - 1e-6) : v; };
                 if (std::isfinite(rhi) && rmin_ok) {            // a x_j <= rhi - rmin
                     double v = (rhi - rmin) / a;
-                    if (a > 0) nu = std::min(nu, std::floor(v + 1e-6)); else nl = std::max(nl, std::ceil(v - 1e-6));
+                    if (a > 0) nu = std::min(nu, down(v)); else nl = std::max(nl, up(v));
                 }
                 if (std::isfinite(rlo) && rmax_ok) {            // a x_j >= rlo - rmax
                     double v = (rlo - rmax) / a;
-                    if (a > 0) nl = std::max(nl, std::ceil(v - 1e-6)); else nu = std::min(nu, std::floor(v + 1e-6));
+                    if (a > 0) nl = std::max(nl, up(v)); else nu = std::min(nu, down(v));
+                }
+                if (!integral) {
+                    if (nl > nu) {
+                        if (nl - nu > 1e-6 * (1.0 + std::fabs(nu))) return false;
+                        nl = nu = std::max(l, std::min(u, 0.5 * (nl + nu)));
+                    }
+                    double step = std::isfinite(u - l) ? 1e-3 * (u - l) : 0.0;
+                    if (nl - l <= std::max(step, 1e-6 * (1.0 + std::fabs(l)))) nl = l;
+                    if (u - nu <= std::max(step, 1e-6 * (1.0 + std::fabs(u)))) nu = u;
                 }
                 if (nl > nu + 1e-9) return false;
                 if (nl > l || nu < u) {
+                    if (trail) trail->push_back({j, l, u});
                     lb[j] = nl; ub[j] = nu;
                     changed.push_back(j);
                     for (int k : prop_cols[j]) if (!queued[k]) { queued[k] = 1; queue.push_back(k); }
@@ -2236,6 +2330,8 @@ struct Solver {
         long dive_budget = 1000 + 2L * S.m;
         if ((opt.features & 1) && !std::isfinite(inc_obj)) feasibility_pump(100, 10000 + 20L * S.m);
         if (opt.features & 2) dive(dive_budget);
+        // when the cheap heuristics found nothing (a first incumbent that is merely feasible would stop the pump)
+        if ((opt.features & 64) && !std::isfinite(inc_obj)) fix_and_propagate(10000 + 20L * S.m);
         if (std::isfinite(inc_obj)) {
             int fixed = reduced_cost_fixing(S.objective());
             if (opt.verbose && fixed) std::printf("  reduced-cost fixing: %d bounds tightened\n", fixed);
@@ -2343,6 +2439,7 @@ struct Solver {
             }
             if ((nodes & 15) == 0) rounding_heuristic();
             if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
+            if ((opt.features & 64) && !std::isfinite(inc_obj) && nodes % 250 == 60) fix_and_propagate(500 + S.m);
             if (opt.verbose && (nodes % 2000) == 0) {
                 double gb = global_bound();
                 std::printf("  nodes %8ld  open %7zu  incumbent %.10g  bound %.10g  %.1fs\n", nodes, heap.size(),

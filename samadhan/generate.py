@@ -125,6 +125,116 @@ def refinery_lp(R=4, C=8, P=6, D=40, T=6, seed=0, quad=0.0):
     return lp
 
 
+def refinery_plan(R=3, C=6, P=4, D=12, T=6, seed=0):
+    """Multi-period refinery planning MILP: the planning LP above with the discrete decisions of a real plan.
+
+    Crude is bought in whole cargoes: n[c,t] in {0, ..., 4} parcels of crude c in period t, each of `parcel` kbbl
+    with a fixed freight and port cost. A crude unit is either off or runs between its minimum and its maximum
+    rate: on[r,t] binary, fixed running cost, start-up cost st[r,t] >= on[r,t] - on[r,t-1].
+      crude bought      sum_r x[c,r,t] <= parcel * n[c,t]
+      CDU modes         minrate_r on[r,t] <= sum_c x[c,r,t] <= cap_r on[r,t]
+      sulfur, yields, dispatch, depot balance and costs as in refinery_lp.
+    """
+    rng = np.random.default_rng(seed)
+    nx, ny, ns, nI, nz = C * R * T, P * R * T, P * R * D * T, P * D * T, P * D * T
+    nn, non, nst = C * T, R * T, R * T
+    ox, oy, os_, oI, oz = 0, nx, nx + ny, nx + ny + ns, nx + ny + ns + nI
+    on_, oon, ost = oz + nz, oz + nz + nn, oz + nz + nn + non
+    n = ost + nst
+    X = lambda c, r, t: ox + (c * R + r) * T + t
+    Yv = lambda p, r, t: oy + (p * R + r) * T + t
+    S = lambda p, r, d, t: os_ + ((p * R + r) * D + d) * T + t
+    I = lambda p, d, t: oI + (p * D + d) * T + t
+    Z = lambda p, d, t: oz + (p * D + d) * T + t
+    N = lambda c, t: on_ + c * T + t
+    ON = lambda r, t: oon + r * T + t
+    ST = lambda r, t: ost + r * T + t
+
+    ref_xy = rng.uniform([8, 68], [32, 92], size=(R, 2))
+    dep_xy = rng.uniform([8, 68], [32, 92], size=(D, 2))
+    dist = np.linalg.norm(ref_xy[:, None, :] - dep_xy[None, :, :], axis=2) * 111.0
+    freight = 0.02 + 0.0009 * dist * rng.uniform(0.9, 1.1, size=dist.shape)
+    crude_price = rng.uniform(70, 95, size=(C, T))
+    sulfur = rng.uniform(0.2, 3.0, size=C)
+    smax = rng.uniform(1.2, 2.0, size=R)
+    cap = rng.uniform(150, 400, size=R) * (D * P / 240.0)
+    minrate = 0.5 * cap
+    yields = rng.dirichlet(np.ones(P + 1) * 2, size=(C, R))[:, :, :P].transpose(0, 2, 1)
+    base_dem = rng.uniform(2, 12, size=(P, D)) * (cap.sum() * 0.8 / (P * D * 7.0))
+    season = 1 + 0.15 * np.sin(np.arange(T) / max(T, 1) * 2 * np.pi)
+    dem = base_dem[:, :, None] * season[None, None, :] * rng.uniform(0.85, 1.15, size=(P, D, T))
+    tank = base_dem * 1.5
+    parcel = cap.sum() / (0.6 * C)                     # a cargo feeds the refineries for a fraction of a period
+    cargo_cost = 2.0 * parcel                          # freight and port cost per cargo ($k)
+    run_cost = 0.5 * cap                               # fixed cost of running a unit for a period
+    start_cost = 4.0 * cap
+
+    cost = np.zeros(n)
+    for c in range(C):
+        for r in range(R):
+            cost[[X(c, r, t) for t in range(T)]] = crude_price[c]
+    idx = np.arange(ns)
+    cost[os_:os_ + ns] = freight[(idx // (T * D)) % R, (idx // T) % D]
+    cost[oI:oI + nI] = 0.15
+    cost[oz:oz + nz] = 400.0
+    cost[on_:on_ + nn] = cargo_cost
+    for r in range(R):
+        for t in range(T):
+            cost[ON(r, t)] = run_cost[r]
+            cost[ST(r, t)] = start_cost[r]
+
+    l = np.zeros(n)
+    u = np.full(n, np.inf)
+    ii = np.arange(nI)
+    u[oI:oI + nI] = tank[(ii // (D * T)) % P, (ii // T) % D]
+    u[on_:on_ + nn] = 4.0
+    u[oon:] = 1.0
+    integer = np.zeros(n, bool)
+    integer[on_:ost] = True                            # cargoes and unit modes; start-ups follow from them
+
+    eq_r, eq_c, eq_v, eq_b = [], [], [], []
+    ge_r, ge_c, ge_v, ge_b = [], [], [], []
+
+    def add(cols, vals, rhs, eq=False):
+        rows, cc, vv, bb = (eq_r, eq_c, eq_v, eq_b) if eq else (ge_r, ge_c, ge_v, ge_b)
+        rows.extend([len(bb)] * len(cols)); cc.extend(cols); vv.extend(vals); bb.append(rhs)
+
+    for t in range(T):
+        for c in range(C):                             # parcel n[c,t] - sum_r x >= 0
+            add([N(c, t)] + [X(c, r, t) for r in range(R)], [parcel] + [-1.0] * R, 0.0)
+        for r in range(R):
+            run = [X(c, r, t) for c in range(C)]
+            add(run + [ON(r, t)], [-1.0] * C + [cap[r]], 0.0)
+            add(run + [ON(r, t)], [1.0] * C + [-minrate[r]], 0.0)
+            add(run, list(smax[r] - sulfur), 0.0)
+            if t > 0:                                  # (units are running when the plan starts)
+                add([ST(r, t), ON(r, t), ON(r, t - 1)], [1.0, -1.0, 1.0], 0.0)
+            for p in range(P):
+                add([Yv(p, r, t)] + run, [1.0] + list(-yields[:, p, r]), 0.0, eq=True)
+                add([Yv(p, r, t)] + [S(p, r, d, t) for d in range(D)], [1.0] + [-1.0] * D, 0.0)
+        for p in range(P):
+            for d in range(D):
+                cols = [S(p, r, d, t) for r in range(R)] + [Z(p, d, t), I(p, d, t)]
+                vals = [1.0] * R + [1.0, -1.0]
+                if t > 0:
+                    cols.append(I(p, d, t - 1)); vals.append(1.0)
+                add(cols, vals, dem[p, d, t], eq=True)
+
+    Keq = sp.csr_matrix((eq_v, (eq_r, eq_c)), shape=(len(eq_b), n))
+    Kge = sp.csr_matrix((ge_v, (ge_r, ge_c)), shape=(len(ge_b), n))
+    K = sp.vstack([Keq, Kge]).tocsr()
+    q = np.array(eq_b + ge_b)
+    return LP(cost, K, q, len(eq_b), l, u, name=f"refinery_plan_R{R}_C{C}_P{P}_D{D}_T{T}_s{seed}", integer=integer)
+
+
+# Planning MILP sizes for the README and benchmarks/mrpl.py
+PLAN_SIZES = {
+    "S": dict(R=3, C=6, P=4, D=12, T=6),
+    "M": dict(R=4, C=8, P=6, D=30, T=12),
+    "L": dict(R=6, C=10, P=6, D=60, T=12),
+}
+
+
 def refinery_milp(R=3, C=6, P=3, D=5, seed=0):
     """Single-period refinery design/contract MILP.
 

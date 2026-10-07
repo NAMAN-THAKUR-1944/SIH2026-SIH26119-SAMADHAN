@@ -95,16 +95,42 @@ def test_core_milp_matches_highs(seed):
     assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
 
 
-@pytest.mark.parametrize("features", [0, 1, 2, 4, 8, 16, 32, 63])
+@pytest.mark.parametrize("features", [0, 1, 2, 4, 8, 16, 32, 64, 127])
 def test_core_milp_every_feature(features):
-    """Each branch-and-cut feature (pump, diving, covers, reliability branching, propagation, c-MIR cuts) on its own
-    and all together must reach the same proven optimum."""
+    """Each branch-and-cut feature (pump, diving, covers, reliability branching, propagation, c-MIR cuts,
+    fix-and-propagate) on its own and all together must reach the same proven optimum."""
     from samadhan.core import solve_core
     from samadhan.verify import violation
     for seed in range(3):
         lp = refinery_milp(R=4, C=8, P=3, D=6, seed=seed)
         r = solve_core(lp, time_limit=60, features=features)
         assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9 and violation(lp, r.x) < 1e-6
+
+
+@pytest.mark.parametrize("model", ["crude", "plan"])
+def test_mrpl_models_match_highs(model):
+    """Small MRPL-shaped MILPs (crude scheduling at the marine terminal, refinery planning with crude cargoes and
+    unit modes): the C++ core reaches the HiGHS optimum with a feasible schedule."""
+    from samadhan.core import solve_core
+    from samadhan.crude import crude_schedule
+    from samadhan.generate import refinery_plan
+    from samadhan.verify import violation
+    lp = crude_schedule(V=2, K=3, U=2, T=8, seed=1) if model == "crude" else refinery_plan(R=2, C=3, P=3, D=4, T=3, seed=1)
+    r = solve_core(lp, time_limit=60)
+    assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-6 and violation(lp, r.x) < 1e-6
+
+
+def test_fix_and_propagate_finds_a_schedule():
+    """With only fix-and-propagate among the heuristics and the search stopped at the root, a crude scheduling
+    model still gets a feasible schedule (rounding the LP alone leaves the tanks inconsistent)."""
+    import math
+
+    from samadhan.core import solve_core
+    from samadhan.crude import crude_schedule
+    from samadhan.verify import violation
+    lp = crude_schedule(V=3, K=6, U=2, T=21, seed=8)
+    r = solve_core(lp, time_limit=60, node_limit=1, features=64)
+    assert math.isfinite(r.obj) and violation(lp, r.x) < 1e-6
 
 
 def test_core_milp_without_cuts():
