@@ -43,7 +43,8 @@ def run_one(args):
     r = solve_core(lp, time_limit=time_limit, gap=gap)
     out = dict(model=kind, size=size, seed=seed, name=lp.name, n=n, m=m, ints=int(lp.integer.sum()),
                highs=h, samadhan=dict(status=r.status, obj=r.obj, bound=r.bound, gap=r.gap, nodes=r.nodes,
-                                      time=r.time, viol=violation(lp, r.x) if r.x is not None else None))
+                                      time=r.time,
+                                      viol=violation(lp, r.x) if r.x is not None and math.isfinite(r.obj) else None))
     if h["status"] == "Optimal" and r.x is not None:
         out["obj_rel_diff"] = abs(r.obj - h["obj"]) / max(1.0, abs(h["obj"]))
     return out
