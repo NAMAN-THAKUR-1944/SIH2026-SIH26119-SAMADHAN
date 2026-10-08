@@ -49,7 +49,7 @@ struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
     int features = 123;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
-                                 // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate
+                                 // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
@@ -1510,6 +1510,56 @@ struct Solver {
                         last_completion == OPTIMAL ? "LP point rejected" : "LP not finished");
     }
 
+    // RINS (Danna, Rothberg & Le Pape 2005): the integer columns on which the incumbent and the current LP solution
+    // agree are fixed at that value, and the sub-MIP over the others (root cuts included) is solved by a nested
+    // branch-and-cut with a node and time budget and the incumbent as cutoff. Skipped when fewer than 30% of the
+    // integer columns agree (the sub-MIP would be about as hard as the model) or when all do.
+    long rins_calls = 0;
+    bool rins_off = false;                       // a sub-MIP that could not even branch: not worth repeating
+    double rins_time = 0.0;
+    const std::vector<int8_t>* warm_st = nullptr;  // starting basis for solve_scaled (set by a parent's RINS)
+    const std::vector<int>* warm_head = nullptr;
+    Clock::time_point rins_last;
+    void rins(double seconds, long nodes) {
+        if (rins_off || !std::isfinite(inc_obj) || rins_time > 0.3 * opt.time_limit || Clock::now() >= S.t_end) return;
+        rins_last = Clock::now();
+        int nint = 0, agree = 0;
+        for (int j = 0; j < M.n; ++j) {
+            if (!M.isint[j]) continue;
+            ++nint;
+            if (std::fabs(S.x[j] - inc[j]) < 1e-6) ++agree;
+        }
+        if (agree < 0.3 * nint || agree == nint) return;
+        auto start = Clock::now();
+        double left = std::chrono::duration<double>(S.t_end - start).count();
+        if (left < 1.0) return;
+        Solver sub;
+        sub.M = M;
+        for (int j = 0; j < M.n; ++j) {
+            sub.M.lb[j] = root_lb[j]; sub.M.ub[j] = root_ub[j];
+            if (M.isint[j] && std::fabs(S.x[j] - inc[j]) < 1e-6) sub.M.lb[j] = sub.M.ub[j] = inc[j];
+        }
+        sub.opt = opt;
+        sub.opt.time_limit = std::min(seconds, 0.5 * left);
+        sub.opt.node_limit = nodes;
+        sub.opt.features = opt.features & ~(128 | 8);   // a quick search: no nested RINS, no strong branching
+        sub.opt.cut_rounds = 0;
+        sub.opt.verbose = 0;
+        sub.inc = inc; sub.inc_obj = inc_obj;
+        sub.warm_st = &S.st; sub.warm_head = &S.head;
+        Info sinfo;
+        std::vector<double> sx;
+        sub.solve_scaled(sinfo, sx);
+        ++rins_calls;
+        if (sinfo.nodes < 2) rins_off = true;
+        double before = inc_obj;
+        if (sub.inc_obj < inc_obj - 1e-9) try_incumbent(sub.inc);
+        rins_time += seconds_since(start);
+        if (opt.verbose)
+            std::printf("  RINS: %d of %d integer columns fixed, %.0f nodes, %.2f s: %s\n", agree, nint, sinfo.nodes,
+                        seconds_since(start), inc_obj < before ? "better incumbent" : "nothing better");
+    }
+
     // Reduced-cost fixing with the root LP: a nonbasic integer column whose reduced cost shows that moving it by
     // k units would push the LP bound past the incumbent cannot move that far in any better solution, so its
     // global bound is tightened. Returns the number of tightened bounds.
@@ -2278,6 +2328,10 @@ struct Solver {
         for (int j = 0; j < M.n; ++j) if (M.isint[j]) has_int = true;
 
         S.init_slack_basis(root_lb, root_ub);
+        if (warm_st) {                         // start from a given basis (RINS sub-MIP: the parent's node basis)
+            S.st = *warm_st; S.head = *warm_head;
+            if (!S.refactor_full()) S.init_slack_basis(root_lb, root_ub);
+        }
         Result r = S.solve();
         info.lp_iters = (double)S.iters;
         root_lp_iters = S.iters;
@@ -2348,6 +2402,7 @@ struct Solver {
             int fixed = reduced_cost_fixing(S.objective());
             if (opt.verbose && fixed) std::printf("  reduced-cost fixing: %d bounds tightened\n", fixed);
             if (opt.features & 2) dive(dive_budget);
+            if (opt.features & 128) rins(0.1 * opt.time_limit, 2000);
         }
 
         // branch-and-bound with plunging
@@ -2451,6 +2506,9 @@ struct Solver {
             }
             if ((nodes & 15) == 0) rounding_heuristic();
             if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
+            if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 &&
+                seconds_since(rins_last) > 0.1 * opt.time_limit)
+                rins(0.08 * opt.time_limit, 2000);
             if ((opt.features & 64) && !std::isfinite(inc_obj) && nodes % 250 == 60)
                 fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
             if (opt.verbose && (nodes % 2000) == 0) {
