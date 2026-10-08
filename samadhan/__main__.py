@@ -26,14 +26,16 @@ def _gpu(lp, a):
     from .pdlp import PDLP
     r = PDLP(lp, device=a.device).solve(tol=a.tol, time_limit=a.time_limit, verbose=not a.quiet,
                                          adaptive=a.method == "adaptive")
-    print(f"\nstatus      {r.status}\nobjective   {r.primal_obj:.10g}\ndual bound  {r.dual_obj:.10g}\n"
+    print(f"\nstatus      {r.status}\nobjective   {lp.sense * r.primal_obj:.10g}\n"
+          f"dual bound  {lp.sense * r.dual_obj:.10g}\n"
           f"rel. gap    {r.rel_gap:.2e}   primal res {r.rel_primal_res:.2e}   dual res {r.rel_dual_res:.2e}\n"
           f"iterations  {r.iterations}   restarts {r.restarts}\n"
           f"time        {r.solve_time:.2f} s solve + {r.setup_time:.2f} s setup on {r.device}")
     if a.crossover and r.status == "optimal" and lp.Q is None:
         from .core import crossover
         c = crossover(lp, r.x, r.y, time_limit=max(a.time_limit - r.solve_time, 1.0), verbose=not a.quiet)
-        print(f"crossover   {c.status}: exact vertex, objective {c.obj:.10g}, {c.lp_iters} simplex iterations, "
+        print(f"crossover   {c.status}: exact vertex, objective {lp.sense * c.obj:.10g}, {c.lp_iters} simplex "
+              f"iterations, "
               f"{c.time:.2f} s (C++ core)")
         return c.status == "optimal"
     return r.status == "optimal"
@@ -43,7 +45,7 @@ def _ipm(lp, a):
     from .ipm import solve_ipm
     r = solve_ipm(lp, time_limit=a.time_limit, crossover=True, verbose=not a.quiet)
     print(f"\nstatus      {r.status}{'  (exact vertex after crossover)' if r.vertex else ''}\n"
-          f"objective   {r.primal_obj:.10g}\n"
+          f"objective   {lp.sense * r.primal_obj:.10g}\n"
           f"iterations  {r.iterations} interior-point\n"
           f"time        {r.time:.2f} s (crossover {r.crossover_time:.2f} s)")
     return r.status == "optimal"
@@ -52,7 +54,7 @@ def _ipm(lp, a):
 def _core(lp, a):
     from .core import solve_core
     r = solve_core(lp, time_limit=a.time_limit, verbose=not a.quiet)
-    print(f"\nstatus      {r.status}\nobjective   {r.obj:.10g}\nbound       {r.bound:.10g}\n"
+    print(f"\nstatus      {r.status}\nobjective   {lp.sense * r.obj:.10g}\nbound       {lp.sense * r.bound:.10g}\n"
           f"gap         {r.gap:.2e}   nodes {r.nodes}   simplex iterations {r.lp_iters}   cuts {r.cuts}\n"
           f"time        {r.time:.2f} s (C++ core)")
     return r.status == "optimal"

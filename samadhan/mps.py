@@ -1,4 +1,5 @@
-"""From-scratch reader for free- and fixed-format MPS files (Netlib, MIPLIB, Mittelmann)."""
+"""From-scratch reader for free- and fixed-format MPS files (Netlib, MIPLIB, Mittelmann, the MPS writers of Pyomo and
+other modelling tools). OBJSENSE MAX is read as the minimisation of the negated objective (LP.sense = -1)."""
 import gzip
 
 import numpy as np
@@ -42,6 +43,9 @@ def _records(path, fixed):
             if "'MARKER'" in line.upper():
                 yield "MARKER", "'INTORG'" in line.upper()
                 continue
+            if fixed and section == "OBJSENSE":
+                yield section, line.split()
+                continue
             if fixed:
                 f1, f2, f3, f4, f5, f6 = _fixed_fields(line.expandtabs(8))
                 if section == "ROWS":
@@ -53,6 +57,9 @@ def _records(path, fixed):
                     yield section, (f1.upper(), f3, f4)
                 continue
             tok = line.split()
+            if section == "OBJSENSE":
+                yield section, tok
+                continue
             if section == "ROWS":
                 if len(tok) != 2:
                     raise _NeedFixed
@@ -98,11 +105,16 @@ def _read(path, fixed):
     integer = []
     in_int = False
     name = str(path)
+    maximize = False
 
     for section, rec in _records(path, fixed):
         if section == "HEADER":
             if rec[0].upper() == "NAME" and len(rec) > 1:
                 name = rec[1]
+            elif rec[0].upper() == "OBJSENSE" and len(rec) > 1:     # OBJSENSE MAX on one line
+                maximize = rec[1].upper().startswith("MAX")
+        elif section == "OBJSENSE":
+            maximize = rec[0].upper().startswith("MAX")
         elif section == "MARKER":
             in_int = rec
         elif section == "ROWS":
@@ -205,5 +217,6 @@ def _read(path, fixed):
     Kge = sp.diags(ge_sign) @ A[ge_idx] if ge_idx else sp.csr_matrix((0, n))
     K = sp.vstack([Keq, Kge]).tocsr()
     q = np.array(eq_rhs + ge_rhs, float)
-    return LP(c, K, q, len(eq_idx), l, u, obj_const=obj_const, name=name,
-              col_names=list(cols), integer=integer if integer.any() else None)
+    sense = -1 if maximize else 1
+    return LP(sense * c, K, q, len(eq_idx), l, u, obj_const=sense * obj_const, name=name,
+              col_names=list(cols), integer=integer if integer.any() else None, sense=sense)

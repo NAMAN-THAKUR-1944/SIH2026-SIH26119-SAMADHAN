@@ -133,6 +133,83 @@ def test_fix_and_propagate_finds_a_schedule():
     assert math.isfinite(r.obj) and violation(lp, r.x) < 1e-6
 
 
+def _toy_refinery(add_var, maximize_sum, binary, integer):
+    """A small crude-selection model through a modelling layer: margins, CDU capacity with a second unit to switch
+    on, Basrah cargoes, a sulphur pool limit, a contract and a link equality. add_var(name, lo, hi, kind)."""
+    crude = {c: add_var(f"crude_{c}", 0, 100, "C") for c in ("arab", "basrah", "murban")}
+    run, cargo = add_var("run_cdu2", 0, 1, binary), add_var("cargoes", 0, 3, integer)
+    margin, sulfur = {"arab": 6.0, "basrah": 7.5, "murban": 5.0}, {"arab": 0.8, "basrah": 2.9, "murban": 0.7}
+    total = sum(crude.values())
+    objective = sum(margin[c] * crude[c] for c in crude) - 40 * run - 25 * cargo + 10
+    rows = [total <= 120 + 60 * run, crude["basrah"] <= 50 * cargo,
+            sum(sulfur[c] * crude[c] for c in crude) <= 1.9 * total, crude["murban"] >= 10,
+            crude["arab"] - crude["murban"] == 20]
+    return objective, rows
+
+
+def test_pulp_plugin_matches_highs():
+    """samadhan.pulp_solver.SAMADHAN on a PuLP model (maximise, <=, >=, =, binary and integer columns, objective
+    constant) gives the HiGHS optimum and values."""
+    pulp = pytest.importorskip("pulp")
+    from samadhan.pulp_solver import SAMADHAN
+
+    def build():
+        p = pulp.LpProblem("toy", pulp.LpMaximize)
+        kinds = {"C": "Continuous", "B": "Binary", "I": "Integer"}
+        obj, rows = _toy_refinery(lambda n, lo, hi, k: p.add_variable(n, lowBound=lo, upBound=hi, cat=kinds[k]),
+                                  True, "B", "I")
+        p += obj
+        for r in rows:
+            p += r
+        return p
+    a, b = build(), build()
+    sa, sb = a.solve(SAMADHAN(msg=False, timeLimit=30)), b.solve(pulp.HiGHS(msg=False))
+    assert sa.status == sb.status == pulp.LpSolveStatus.Optimal
+    assert rel(pulp.value(a.objective), pulp.value(b.objective)) < 1e-9
+    va, vb = {v.name: v.varValue for v in a.variables()}, {v.name: v.varValue for v in b.variables()}
+    assert all(abs(va[k] - vb[k]) < 1e-6 for k in vb)
+
+
+def test_pyomo_plugin_matches_highs():
+    """SolverFactory("samadhan") on a Pyomo model (maximise, ranged row, indexed and integer variables) gives the
+    HiGHS optimum and loads the values into the model."""
+    pyo = pytest.importorskip("pyomo.environ")
+    import samadhan.pyomo_solver  # noqa: F401  (registers the solver)
+
+    def build():
+        m = pyo.ConcreteModel()
+        m.v = pyo.Var(["crude_arab", "crude_basrah", "crude_murban"], bounds=(0, 100))
+        m.run, m.cargo = pyo.Var(domain=pyo.Binary), pyo.Var(domain=pyo.NonNegativeIntegers, bounds=(0, 3))
+        pick = {"C": None, "B": m.run, "I": m.cargo}
+        obj, rows = _toy_refinery(lambda n, lo, hi, k: m.v[n] if k == "C" else pick[k], True, "B", "I")
+        m.obj = pyo.Objective(expr=obj, sense=pyo.maximize)
+        m.rows = pyo.ConstraintList()
+        for r in rows:
+            m.rows.add(r)
+        m.window = pyo.Constraint(expr=(5, m.v["crude_murban"] + m.cargo, 40))
+        return m
+    a, b = build(), build()
+    ra = pyo.SolverFactory("samadhan").solve(a, timelimit=30)
+    pyo.SolverFactory("appsi_highs").solve(b)
+    assert str(ra.solver.termination_condition) == "optimal"
+    assert rel(pyo.value(a.obj), pyo.value(b.obj)) < 1e-9
+    assert abs(pyo.value(a.cargo) - pyo.value(b.cargo)) < 1e-6 and abs(pyo.value(a.run) - pyo.value(b.run)) < 1e-6
+
+
+def test_mps_objsense_max(tmp_path):
+    """OBJSENSE MAX (written by Pyomo and other modelling tools) is read as the minimisation of the negated
+    objective, with LP.sense = -1."""
+    from samadhan.core import solve_core
+    from samadhan.mps import read_mps
+    f = tmp_path / "max.mps"
+    f.write_text("NAME t\nOBJSENSE\n    MAX\nROWS\n N obj\n L c1\nCOLUMNS\n    x obj 3 c1 1\n    y obj 2 c1 1\n"
+                 "RHS\n    RHS c1 4\nBOUNDS\n UP BND x 3\nENDATA\n")
+    lp = read_mps(f)
+    assert lp.sense == -1 and list(lp.c) == [-3.0, -2.0]
+    r = solve_core(lp)
+    assert r.status == "optimal" and lp.sense * r.obj == pytest.approx(11.0)       # x = 3, y = 1
+
+
 def test_core_milp_without_cuts():
     from samadhan.core import solve_core
     lp = refinery_milp(seed=1)

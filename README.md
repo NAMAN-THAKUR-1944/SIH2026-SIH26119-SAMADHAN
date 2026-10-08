@@ -311,7 +311,7 @@ python -m venv .venv
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128   # or /whl/cpu
 .venv/Scripts/pip install -r requirements.txt
 .venv/Scripts/python -m samadhan verify                         # self-check of every engine, ~10 s
-.venv/Scripts/python -m pytest                                  # 44 correctness tests, ~25 s
+.venv/Scripts/python -m pytest                                  # 65 correctness tests, ~45 s
 .venv/Scripts/python -m samadhan demo --size XL --tol 1e-6      # 1.16M-variable refinery LP on the GPU
 .venv/Scripts/python -m samadhan solve model.mps                # engine picked from the model
 .venv/Scripts/python -m samadhan solve model.mps --engine core  # force the C++ dual simplex / branch-and-cut
@@ -327,6 +327,22 @@ print(solve(lp, tol=1e-4, crossover=True).primal_obj)       # GPU engine + cross
 print(solve_ipm(lp, crossover=True).primal_obj)             # interior point + crossover (LP)
 print(solve_core(lp, time_limit=60).obj)                    # C++ core: LP or MILP (integer markers in the file)
 ```
+
+**From PuLP or Pyomo.** Existing models need one line changed (`pip install pulp pyomo`, optional):
+
+```python
+import pulp
+from samadhan.pulp_solver import SAMADHAN
+prob.solve(SAMADHAN(msg=False, timeLimit=60))               # LP or MILP; engine="gpu" / "ipm" for large LPs
+
+import pyomo.environ as pyo
+import samadhan.pyomo_solver                                # registers "samadhan" with Pyomo
+pyo.SolverFactory("samadhan").solve(model, timelimit=60)    # values are loaded into the model's variables
+```
+
+Both plugins hand the model to the same engines as above and return the solution, status and bound in the
+modelling layer's own terms; on a small crude-selection model with binaries, integers, ranged rows and a maximised
+objective both give the HiGHS optimum and values (`tests/test_samadhan.py`).
 
 The C++ core is compiled automatically on first use with the zig toolchain (installed from PyPI with the
 requirements), so no system compiler is needed. CI lints the code, builds the core and runs the tests on
@@ -347,6 +363,7 @@ python -m benchmarks.crossover --with-L     # cold simplex vs crossover    -> re
 git clone https://github.com/coin-or-tools/Data-miplib3 data/miplib3
 python -m benchmarks.miplib              # MIPLIB 3                       -> results/milp_miplib3.json
 python -m benchmarks.miplib --set miplib2017   # 50 MIPLIB 2017 models     -> results/milp_miplib2017.json
+python -m benchmarks.mrpl                # MRPL-shaped MILPs (generated) -> results/milp_mrpl.json
 # (the .mps.gz files of the models listed in benchmarks/miplib.py, from miplib.zib.de/WebData/instances/)
 # Maros-Meszaros .mat files (< 300 KB) from github.com/qpsolvers/maros_meszaros_qpbenchmark -> data/maros/
 python -m benchmarks.qp maros            # Maros-Meszaros QPs             -> results/qp_maros.json
@@ -360,11 +377,14 @@ python docs/make_figures.py              # the figures above
 samadhan/            the solver package
   pdlp.py            GPU engine for LP and QP (restarted PDHG, adaptive and CUDA-graph modes)
   core.py            binding for the C++ core; compiles it with zig on first use
-  mps.py, qpdata.py  model readers: MPS (free / fixed format, RANGES, integer markers), Maros-Meszaros .mat
+  mps.py, qpdata.py  model readers: MPS (free / fixed format, RANGES, OBJSENSE, integer markers), Maros-Meszaros .mat
   simplex.py, milp.py  pure-Python reference simplex and branch-and-bound, used to cross-check the C++ core
   presolve.py        presolve and postsolve for the C++ core (LP and MILP)
   ipm.py             interior-point method (Mehrotra) with crossover
   generate.py        refinery planning LP / QP / MILP generators
+  crude.py           crude oil scheduling MILP of a marine terminal (MRPL-shaped)
+  pulp_solver.py     PuLP plugin (SAMADHAN solver class)
+  pyomo_solver.py    Pyomo plugin (SolverFactory("samadhan"))
   baseline.py        HiGHS referee (LP, QP, MILP), used only for benchmarks and tests
   verify.py          self-check: python -m samadhan verify
   __main__.py        command line: python -m samadhan

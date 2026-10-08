@@ -5,6 +5,9 @@ torch>=2.11
 numpy>=2.5
 scipy>=1.18
 ziglang>=0.13        # C++ toolchain that compiles the MILP core on first use (no system compiler needed)
+# modelling-language plugins (optional): samadhan.pulp_solver, samadhan.pyomo_solver
+pulp>=4.0
+pyomo>=6.8
 # benchmark referee and tests only (not used inside the solver)
 highspy>=1.15
 pytest>=9.1
