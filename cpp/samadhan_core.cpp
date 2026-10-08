@@ -1273,6 +1273,8 @@ struct Solver {
     // Complete an integer assignment xr: fix the integer columns at xr, solve the LP over the continuous columns
     // with the original costs, and offer the result as an incumbent. The LP is restored afterwards.
     Result last_completion = OPTIMAL;            // LP status of the last complete_rounding (diagnostics)
+    long root_lp_iters = 0;                      // iterations of the root LP (sizes the heuristics' LP budgets)
+    double root_lp_seconds = 0.0;                // ... and its time
     bool complete_rounding(const std::vector<double>& xr, const std::vector<double>& c0, bool has_cont) {
         if (!has_cont) {
             double before = inc_obj;
@@ -1373,11 +1375,15 @@ struct Solver {
     // Without an incumbent the column closest to an integer is rounded (fractional diving); with one, the column
     // is moved towards the incumbent's value (guided diving). The LP is restored afterwards.
     double heur_time = 0.0;                     // seconds spent in diving / feasibility pump
-    bool heur_allowed() const { return heur_time < 0.1 * opt.time_limit && Clock::now() < S.t_end; }
+    // heuristics share 10% of the time; fix-and-propagate may go up to 25% while there is no incumbent on models
+    // whose LPs are expensive (root LP above 1% of the time limit), where 10% does not cover a completion LP
+    bool heur_allowed(double share = 0.1) const {
+        return heur_time < share * opt.time_limit && Clock::now() < S.t_end;
+    }
 
     // run a heuristic with an LP iteration budget and a deadline; the LP is restored afterwards
-    template <class Fn> void with_budget(long lp_budget, double seconds, Fn fn) {
-        if (!heur_allowed()) return;
+    template <class Fn> void with_budget(long lp_budget, double seconds, Fn fn, double share = 0.1) {
+        if (!heur_allowed(share)) return;
         auto start = Clock::now();
         LPState saved = save_lp();
         long max_iter = S.opt.max_lp_iter;
@@ -1432,9 +1438,13 @@ struct Solver {
     // binaries where diving and the pump need too many LPs. Two orders: the rounded LP point, most integral
     // column first; and the strongest LP decisions first (largest LP value, rounded up once it is clearly
     // positive), which keeps the decisions a time-indexed LP spreads thinly over many periods.
+    // (budgets: the completion LP starts from the node basis with the integer columns fixed; if it needs more
+    // than about twice the root LP's iterations, or three times its time, it is unlikely to finish usefully)
     void fix_and_propagate(long lp_budget) {
         for (int mode = 0; mode < 2; ++mode)
-            with_budget(lp_budget, 0.08 * opt.time_limit, [&]() { fix_propagate_body(mode); });
+            with_budget(lp_budget, std::min(0.15, std::max(0.03, 3.0 * root_lp_seconds / opt.time_limit)) *
+                        opt.time_limit, [&]() { fix_propagate_body(mode); },
+                        !std::isfinite(inc_obj) && root_lp_seconds > 0.01 * opt.time_limit ? 0.25 : 0.1);
     }
 
     void fix_propagate_body(int mode) {
@@ -2270,6 +2280,8 @@ struct Solver {
         S.init_slack_basis(root_lb, root_ub);
         Result r = S.solve();
         info.lp_iters = (double)S.iters;
+        root_lp_iters = S.iters;
+        root_lp_seconds = seconds_since(t0);
         if (r != OPTIMAL) {
             info.time = seconds_since(t0);
             return r == TIME_LIMIT ? 3 : r == INFEASIBLE ? 1 : r == UNBOUNDED ? 2 : 5;
@@ -2331,7 +2343,7 @@ struct Solver {
         if ((opt.features & 1) && !std::isfinite(inc_obj)) feasibility_pump(100, 10000 + 20L * S.m);
         if (opt.features & 2) dive(dive_budget);
         // when the cheap heuristics found nothing (a first incumbent that is merely feasible would stop the pump)
-        if ((opt.features & 64) && !std::isfinite(inc_obj)) fix_and_propagate(10000 + 20L * S.m);
+        if ((opt.features & 64) && !std::isfinite(inc_obj)) fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
         if (std::isfinite(inc_obj)) {
             int fixed = reduced_cost_fixing(S.objective());
             if (opt.verbose && fixed) std::printf("  reduced-cost fixing: %d bounds tightened\n", fixed);
@@ -2439,7 +2451,8 @@ struct Solver {
             }
             if ((nodes & 15) == 0) rounding_heuristic();
             if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
-            if ((opt.features & 64) && !std::isfinite(inc_obj) && nodes % 250 == 60) fix_and_propagate(500 + S.m);
+            if ((opt.features & 64) && !std::isfinite(inc_obj) && nodes % 250 == 60)
+                fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
             if (opt.verbose && (nodes % 2000) == 0) {
                 double gb = global_bound();
                 std::printf("  nodes %8ld  open %7zu  incumbent %.10g  bound %.10g  %.1fs\n", nodes, heap.size(),
