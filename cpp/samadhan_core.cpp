@@ -2327,6 +2327,51 @@ struct Solver {
         return (int)cuts.size();
     }
 
+    // Root LPs of a MILP (the first one and those of the cut rounds) on a fully scaled copy of M, with the root
+    // bounds. Integer columns keep the scale factor 1 in M (integrality stays unchanged), which can slow the dual
+    // simplex down badly (crude scheduling L: no root LP within 120 s, against 8 s fully scaled). A positive column
+    // scaling does not change which columns are basic, so the copy starts from S's basis, and its optimal basis is
+    // loaded into S, whose own solve then has (almost) nothing left to do. Returns the iterations.
+    long lp_on_scaled_copy() {
+        Solver aux;
+        aux.M = M;
+        std::fill(aux.M.isint.begin(), aux.M.isint.end(), 0);
+        aux.scale_model();
+        aux.S.M = &aux.M; aux.S.opt = opt; aux.S.t_end = S.t_end;
+        aux.S.init_slack_basis(aux.M.lb, aux.M.ub);
+        if ((int)S.st.size() == aux.S.N && (int)S.head.size() == aux.S.m) {
+            aux.S.st = S.st; aux.S.head = S.head;
+            if (!aux.S.refactor_full()) aux.S.init_slack_basis(aux.M.lb, aux.M.ub);
+        }
+        Result r = aux.S.solve();
+        if (r == OPTIMAL) {
+            S.st = aux.S.st; S.head = aux.S.head;
+            if (!S.refactor_full()) S.init_slack_basis(root_lb, root_ub);
+        }
+        return aux.S.iters;
+    }
+
+    // A root LP of a MILP: in S as usual, and on the fully scaled copy (from where S stopped) once it has taken
+    // 1.5 (m + n) iterations; then the cut rounds' LPs go to the copy too. The root LPs of all MIPLIB 3 models and
+    // MRPL-shaped models but one need at most 1.3 (m + n) iterations and so keep exactly their path; the crude
+    // scheduling L root needs 12 (m + n) in M against 0.9 (m + n) fully scaled. Iterations, not seconds, decide,
+    // so that runs stay repeatable.
+    bool root_on_copy = false;
+    Result solve_root_lp(long& copy_iters) {
+        if (root_on_copy) {
+            copy_iters += lp_on_scaled_copy();
+            return S.solve();
+        }
+        long max_iter = S.opt.max_lp_iter;
+        S.opt.max_lp_iter = std::min(max_iter, S.iters + std::max(1000L, (long)(1.5 * (M.m + M.n))));
+        Result r = S.solve();
+        S.opt.max_lp_iter = max_iter;
+        if (r != ITER_LIMIT) return r;
+        root_on_copy = true;
+        copy_iters += lp_on_scaled_copy();
+        return S.solve();
+    }
+
     int solve_scaled(Info& info, std::vector<double>& xout) {
         t0 = Clock::now();
         S.M = &M; S.opt = opt;
@@ -2344,9 +2389,10 @@ struct Solver {
             S.st = *warm_st; S.head = *warm_head;
             if (!S.refactor_full()) S.init_slack_basis(root_lb, root_ub);
         }
-        Result r = S.solve();
-        info.lp_iters = (double)S.iters;
-        root_lp_iters = S.iters;
+        long copy_iters = 0;
+        Result r = has_int && !warm_st ? solve_root_lp(copy_iters) : S.solve();
+        info.lp_iters = (double)(S.iters + copy_iters);
+        root_lp_iters = S.iters + copy_iters;
         root_lp_seconds = seconds_since(t0);
         if (r != OPTIMAL) {
             info.time = seconds_since(t0);
@@ -2383,7 +2429,7 @@ struct Solver {
             if (!added) break;
             auto t_end = S.t_end;
             S.t_end = std::min(t_end, cut_end);
-            r = S.solve();
+            r = solve_root_lp(copy_iters);
             S.t_end = t_end;
             if (r != OPTIMAL) {
                 // the LP with this round's cuts did not solve (time limit or numerical trouble): drop them and go on
