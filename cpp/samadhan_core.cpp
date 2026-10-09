@@ -48,7 +48,7 @@ static double seconds_since(Clock::time_point t0) {
 struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
-    int features = 123;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
+    int features = 251;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
                                  // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS
     double time_limit = 300.0;
     long node_limit = 50000000;
@@ -1520,8 +1520,18 @@ struct Solver {
     const std::vector<int8_t>* warm_st = nullptr;  // starting basis for solve_scaled (set by a parent's RINS)
     const std::vector<int>* warm_head = nullptr;
     Clock::time_point rins_last;
-    void rins(double seconds, long nodes) {
+    // Only while the gap to the bound exceeds 1% (near-proven models do not need it). In the tree the calls are
+    // spaced by rins_wait: 10% of the time limit after a success or a new incumbent, doubled after each call that
+    // found nothing.
+    double rins_last_inc = INF;
+    double rins_wait = 0.0;
+    bool rins_due() {
+        double wait = inc_obj < rins_last_inc - 1e-9 ? 0.1 * opt.time_limit : rins_wait;
+        return seconds_since(rins_last) > wait;
+    }
+    void rins(double seconds, long nodes, double bound) {
         if (rins_off || !std::isfinite(inc_obj) || rins_time > 0.3 * opt.time_limit || Clock::now() >= S.t_end) return;
+        if (inc_obj - bound <= 0.01 * std::max(1.0, std::fabs(inc_obj))) return;
         rins_last = Clock::now();
         int nint = 0, agree = 0;
         for (int j = 0; j < M.n; ++j) {
@@ -1554,6 +1564,8 @@ struct Solver {
         if (sinfo.nodes < 2) rins_off = true;
         double before = inc_obj;
         if (sub.inc_obj < inc_obj - 1e-9) try_incumbent(sub.inc);
+        rins_wait = inc_obj < before ? 0.1 * opt.time_limit : std::max(0.2 * opt.time_limit, 2 * rins_wait);
+        rins_last_inc = inc_obj;
         rins_time += seconds_since(start);
         if (opt.verbose)
             std::printf("  RINS: %d of %d integer columns fixed, %.0f nodes, %.2f s: %s\n", agree, nint, sinfo.nodes,
@@ -2402,7 +2414,7 @@ struct Solver {
             int fixed = reduced_cost_fixing(S.objective());
             if (opt.verbose && fixed) std::printf("  reduced-cost fixing: %d bounds tightened\n", fixed);
             if (opt.features & 2) dive(dive_budget);
-            if (opt.features & 128) rins(0.1 * opt.time_limit, 2000);
+            if (opt.features & 128) rins(0.1 * opt.time_limit, 2000, S.objective());
         }
 
         // branch-and-bound with plunging
@@ -2506,9 +2518,8 @@ struct Solver {
             }
             if ((nodes & 15) == 0) rounding_heuristic();
             if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
-            if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 &&
-                seconds_since(rins_last) > 0.1 * opt.time_limit)
-                rins(0.08 * opt.time_limit, 2000);
+            if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 && rins_due())
+                rins(0.08 * opt.time_limit, 2000, global_bound());
             if ((opt.features & 64) && !std::isfinite(inc_obj) && nodes % 250 == 60)
                 fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
             if (opt.verbose && (nodes % 2000) == 0) {
