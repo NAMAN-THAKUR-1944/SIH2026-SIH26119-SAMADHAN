@@ -42,8 +42,8 @@ below, and are stored in [`results/`](results).
 |---|---|---|
 | **LP** | Refinery planning LP, 1.16 M variables | **5.1× faster** than HiGHS at 1e-6 (cost within 0.0002 %), **22×** at 1e-4 |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
-| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **42 proved optimal**, all correct, and a feasible solution on 63; 3 of them HiGHS could not finish (nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
-| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 37; HiGHS proves 18 and finds a solution on all 50; on 6 models SAMADHAN's solution is the better one |
+| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **43 proved optimal**, all correct, and a feasible solution on 63; 3 of them HiGHS could not finish (nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
+| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 37; HiGHS proves 18 and finds a solution on all 50; on 5 models SAMADHAN's solution is the better one |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
@@ -182,11 +182,11 @@ engine stopped at its time limit short of 1e-4; crossover still finished exactly
 
 ![MIPLIB](docs/img/miplib.png)
 
-All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 42
+All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 43
 optimal**, every one matching the known optimum, and finds a feasible solution on **63 of 65**; HiGHS proves 50.
 SAMADHAN finishes **nw04 (87,482 columns), pk1 and qiu** where HiGHS runs out of time, and is faster than HiGHS on
-19 of the models both prove, for example air03 (0.8 s vs 2.8 s), gesa3 (1.2 s vs 3.4 s), cap6000 (0.6 s vs 2.0 s),
-mod008 (0.2 s vs 1.2 s), mitre (1.7 s vs 3.0 s) and rentacar (3.9 s vs 10.4 s).
+19 of the models both prove, for example air03 (0.8 s vs 2.8 s), gesa3 (1.0 s vs 3.4 s), cap6000 (0.5 s vs 2.0 s),
+mod008 (0.2 s vs 1.2 s), mitre (1.5 s vs 3.0 s) and rentacar (4.2 s vs 10.4 s).
 
 How it got here, each step measured on the same models:
 
@@ -199,6 +199,7 @@ How it got here, each step measured on the same models:
 | + Forrest–Tomlin basis update, deterministic refactorisation trigger | 65 | 41 | 62 | 16.5 s |
 | + probing, parallel rows, doubleton equations | 65 | 42 | 62 | 15.5 s |
 | + fix-and-propagate heuristic | 65 | 42 | 63 | 15.8 s |
+| + RINS improvement heuristic | 65 | 43 | 63 | 15.8 s |
 
 The Forrest–Tomlin update targets large LPs; on these small MILPs it is neutral (the counts are unchanged, single
 models move both ways as the search takes another path: l152lav 34 s → 8 s, misc07 17 s → 49 s). Since that change,
@@ -206,7 +207,12 @@ runs are repeatable: the refactorisation trigger no longer reads a clock. The st
 equivalent binaries, parallel rows, doubleton equations) newly solves mitre (2.0 s; probing fixes 4,505 of its
 10,724 columns). Probing costs up to a second where it finds nothing, on set partitioning models (air03 0.1 s → 0.8
 s); p2756 at first lost the poor incumbent it used to find, and fix-and-propagate (below) now finds it a much better
-one (3661, optimum 3,124), and l152lav moves from 8 s to 18 s.
+one (3661, optimum 3,124), and l152lav moves from 8 s to 18 s. RINS (described with the MRPL models below) newly
+proves modglob (51 s) and improves the incumbent on 8 of the models that stay unproved, for example p2756 (3,661 →
+3,193; optimum 3,124), rout (1,193 → 1,082; HiGHS 1,078), mkc (−502 → −526) and set1ch (54,779 → 54,567); it ends
+worse on 4 (mas74, mod011, seymour, swath), and on models that are nearly proved it can cost a few seconds (gesa2_o
+9.9 s → 12.9 s). Before it became a default it was compared with the previous defaults back to back on all 65
+models: 43 against 42 proved, 63 solutions with both, shifted geo-mean 15.8 s against 15.4 s.
 
 The branch-and-cut work finds the first feasible solutions on 10teams, fixnet6, harp2, mkc, p2756 and set1ch,
 newly proves 10teams, pp08a and pp08aCUTS, and cuts solve times sharply on many models (gesa2 21 s → 0.9 s, vpm1
@@ -220,9 +226,11 @@ made things slower on average and are off by default.
 **MIPLIB 2017** (50 models of the current benchmark set, 60 s, one thread, gap 1e-4) is much harder, and here HiGHS
 is clearly ahead: it proves **18** optimal and finds a solution on all 50; SAMADHAN proves **5** (markshare_4_0,
 neos8, nw04, pk1, swath1, all correct; markshare_4_0, nw04 and pk1 are not proved by HiGHS in 60 s) and finds a
-solution on 37. On 6 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-662469, pk1,
-rmatr100-p10, swath3). Presolve, the gap measured on this set, now probes binaries, merges parallel rows and
-substitutes doubleton equations: it matches HiGHS's presolve on 30n20b8 (491 × 4,748 against 488 × 4,733) and
+solution on 37. On 5 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-662469, pk1,
+rmatr100-p10). RINS improves the incumbent on 14 of the 50 models and ends worse on 7, for example neos-860300
+(5,419 → 4,342), timtab1 (1.07 M → 0.99 M) and p200x1188c (18,832 → 15,078, equal to HiGHS); swath3, where
+SAMADHAN was ahead, is now 0.4 % behind. Presolve, the gap measured on this set, now probes binaries, merges
+parallel rows and substitutes doubleton equations: it matches HiGHS's presolve on 30n20b8 (491 × 4,748 against 488 × 4,733) and
 graph20-20-1rand, beats it on air05 (343 × 6,119 against 342 × 6,146) and comes close on neos-860300 and nu25-pr12.
 ex9 is still out of reach: its rows are implications x_j ≤ Σ x_k between binaries, which HiGHS's presolve removes
 completely by enumerating combinations of short rows; ours keeps 33,766 × 8,560 and its LP relaxation does not
@@ -249,20 +257,29 @@ Two models built the way a coastal refinery like MRPL plans and schedules (`sama
 | Crude scheduling | S | 1,941 (882) | 0 / 3 of 3 | 1 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Crude scheduling | M | 5,385 (2,400) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Crude scheduling | L | 14,262 (6,552) | 0 / 0 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
-| Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.4 s vs 6.7 s (median) |
+| Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.0 s vs 5.8 s (median) |
 | Refinery planning | M | 13,824 (144) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Refinery planning | L | 35,976 (192) | 0 / 2 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
 
 On the small planning model SAMADHAN proves the optimum faster than HiGHS on all three instances. On the larger
-planning models neither solver proves optimality in 60 s; where SAMADHAN finds a plan it is within 0.6 % of HiGHS's,
-and on one large instance slightly better, but on one large instance it finds none within the minute. The crude
-scheduling model is where HiGHS is clearly stronger: its LP relaxation is weak (a bound near zero against schedules
-costing thousands), and HiGHS's heuristics find much cheaper schedules than ours within 60 s. Getting first
-solutions at all needed a new heuristic: **fix-and-propagate** fixes the integer columns one by one with domain
-propagation over all bounds, tries the other side on a conflict, and completes the point with one LP, once in the
-order of the rounded LP point and once taking the strongest LP decisions first; while there is no incumbent on a
-model with expensive LPs it may use up to a quarter of the time. Better schedules need improvement heuristics
-(RINS-style neighbourhood search) next.
+planning models neither solver proves optimality in 60 s. SAMADHAN finds a plan on five of the six: three are within
+0.5 % of HiGHS's and one large instance is slightly better. The fifth (M, seed 9) stayed at its first plan in this
+run, 4 % above HiGHS's; the heuristics' budgets are time-based, and with six models solved in parallel fewer nodes fit
+into the minute (run alone it reaches 0.35 %). On one large instance it finds no plan within the minute.
+
+The crude scheduling model is where HiGHS is clearly stronger: its LP relaxation is weak (a bound near zero against
+schedules costing thousands). Getting first solutions at all needed a new heuristic: **fix-and-propagate** fixes the
+integer columns one by one with domain propagation over all bounds, tries the other side on a conflict, and
+completes the point with one LP, once in the order of the rounded LP point and once taking the strongest LP
+decisions first; while there is no incumbent on a model with expensive LPs it may use up to a quarter of the time.
+Better schedules then come from **RINS** (relaxation-induced neighbourhood search, Danna, Rothberg & Le Pape): the
+integer columns on which the incumbent and the current LP solution agree are fixed, and the rest is solved as a
+small MILP by a nested branch-and-bound, warm-started from the parent's basis, with the incumbent as cutoff. It runs
+at the root and in the tree while the gap exceeds 1 %, waiting twice as long after each call that found nothing.
+On the small crude instances it brings the schedule cost from 15,298 to 4,450 and from 45,814 to 1,585 (HiGHS:
+4,095 and 115); the third instance ends at 675 instead of 555 (HiGHS 275). On the medium instances its sub-MIPs are
+still too hard to help within a minute (HiGHS's schedules cost 2,640–31,465, ours 0.38–0.78 M), and on the large
+ones SAMADHAN finds no schedule.
 
 ### QP — Maros–Meszaros and refinery QP
 
@@ -296,8 +313,9 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
   has not been crossed over yet (roadmap).
 * The interior-point method factorises A Θ Aᵀ directly: models with dense columns (fit2p) are slow, as there is
   no dense-column splitting yet.
-* On the crude scheduling MILP (MRPL marine terminal) HiGHS finds much cheaper schedules within 60 s, and on the
-  largest instances SAMADHAN finds none: the branch-and-cut lacks improvement heuristics (RINS, local branching).
+* On the crude scheduling MILP (MRPL marine terminal) HiGHS finds cheaper schedules within 60 s: with RINS the
+  gap is down to 1.1–14× on the small instances, but on the medium ones HiGHS's schedules are 12–290× cheaper and on
+  the largest instances SAMADHAN finds none (no local branching yet, and RINS sub-MIPs there are too hard).
 * Presolve has the standard primal reductions, dual fixing, parallel rows, doubleton substitution and probing,
   but no clique table or enumeration of small rows yet (HiGHS's presolve removes all of ex9 that way), and no
   dominated or duplicate columns or coefficient strengthening. The branch-and-cut root bound is still weaker than
@@ -441,8 +459,10 @@ docs/                idea deck (PDF), figures and the script that draws them
   scalings rounded); knapsack cover cuts are available, off by default. Primal heuristics:
   rounding, a feasibility pump (objective variant, with cycle flips and perturbation) at the root,
   fix-and-propagate (integer columns fixed one by one with propagation over all bounds, completed by one LP), and
-  fractional / guided diving at the root and periodically in the tree, all within 10 % of the time limit; with
-  an incumbent, reduced-cost fixing tightens the global bounds. Reliability branching seeds pseudocosts by
+  fractional / guided diving at the root and periodically in the tree, all within 10 % of the time limit; RINS
+  (the integer columns on which incumbent and LP solution agree are fixed and the rest is solved by a nested
+  branch-and-bound with the incumbent as cutoff) at the root and in the tree while the gap exceeds 1 %, within its
+  own 30 %; with an incumbent, reduced-cost fixing tightens the global bounds. Reliability branching seeds pseudocosts by
   strong branching (25 dual simplex iterations per child, at most half of all LP work), and every node runs
   activity-based domain propagation that prunes infeasible nodes before their LP. Each feature can be switched
   off (`solve_core(..., features=)`); the defaults were chosen by an ablation over MIPLIB 3.
@@ -450,7 +470,7 @@ docs/                idea deck (PDF), figures and the script that draws them
 ## Roadmap (SIH build phase)
 
 1. Crossover at a million variables (the 1.16 M refinery LP); dense columns in the interior-point method.
-2. Improvement heuristics (RINS, local branching) for scheduling models; clique table and enumeration presolve
+2. Local branching and lighter RINS sub-MIPs for large scheduling models; clique table and enumeration presolve
    (ex9), dominated and duplicate columns; lifted cover and flow-cover cuts; parallel tree search.
 3. GPU LP relaxations inside branch-and-bound for very large MILPs; MIQP.
 4. Native CUDA kernels for the PDHG loop; REST service for plant planning systems.
