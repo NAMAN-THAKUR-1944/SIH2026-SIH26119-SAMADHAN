@@ -262,8 +262,8 @@
    "bound": -Infinity,
    "gap": Infinity,
    "nodes": 0,
-   "lp_iters": 126552,
-   "time": 59.99989739997707,
+   "lp_iters": 96304,
+   "time": 60.0018511000281,
    "cuts": 0
   }
  },

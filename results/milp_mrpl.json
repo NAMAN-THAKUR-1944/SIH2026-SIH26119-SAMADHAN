@@ -167,19 +167,19 @@
   "highs": {
    "status": "Time limit reached",
    "obj": 647922.5047286382,
-   "time": 60.068008799979,
-   "bound": 53.93962443130438,
+   "time": 60.037766699970234,
+   "bound": 53.939624431304345,
    "gap": 0.9999167498828369,
-   "nodes": 2
+   "nodes": 0
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": Infinity,
-   "bound": -Infinity,
-   "gap": Infinity,
-   "nodes": 0,
-   "time": 59.99997979999074,
-   "viol": null
+   "obj": 374540.8428098938,
+   "bound": 8.540093875710124,
+   "gap": 0.9999771984977348,
+   "nodes": 26,
+   "time": 60.00549629998025,
+   "viol": 7.105427357601002e-15
   }
  },
  {
@@ -193,19 +193,19 @@
   "highs": {
    "status": "Time limit reached",
    "obj": 884317.2445874788,
-   "time": 60.01097679999657,
-   "bound": 40.02303699108682,
-   "gap": 0.9999547413134414,
+   "time": 60.017658600001596,
+   "bound": 37.361164313290345,
+   "gap": 0.9999577514013869,
    "nodes": 0
   },
   "samadhan": {
    "status": "time_limit",
-   "obj": Infinity,
-   "bound": -Infinity,
-   "gap": Infinity,
-   "nodes": 0,
-   "time": 59.999824900013955,
-   "viol": null
+   "obj": 910373.4324403781,
+   "bound": 9.126445080432346,
+   "gap": 0.9999899750533625,
+   "nodes": 1,
+   "time": 59.99930109998052,
+   "viol": 1.4210854715202004e-14
   }
  },
  {

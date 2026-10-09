@@ -226,12 +226,12 @@ made things slower on average and are off by default.
 **MIPLIB 2017** (50 models of the current benchmark set, 60 s, one thread, gap 1e-4) is much harder, and here HiGHS
 is clearly ahead: it proves **18** optimal and finds a solution on all 50; SAMADHAN proves **5** (markshare_4_0,
 neos8, nw04, pk1, swath1, all correct; markshare_4_0, nw04 and pk1 are not proved by HiGHS in 60 s) and finds a
-solution on 37. On 5 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-662469, pk1,
+solution on 37. On 5 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-957323, pk1,
 rmatr100-p10). RINS improves the incumbent on 14 of the 50 models and ends worse on 7, for example neos-860300
 (5,419 → 4,342), timtab1 (1.07 M → 0.99 M) and p200x1188c (18,832 → 15,078, equal to HiGHS); swath3, where
 SAMADHAN was ahead, is now 0.4 % behind. Presolve, the gap measured on this set, now probes binaries, merges
-parallel rows and substitutes doubleton equations: it matches HiGHS's presolve on 30n20b8 (491 × 4,748 against 488 × 4,733) and
-graph20-20-1rand, beats it on air05 (343 × 6,119 against 342 × 6,146) and comes close on neos-860300 and nu25-pr12.
+parallel rows and substitutes doubleton equations: it matches HiGHS's presolve on 30n20b8 (491 × 4,748 against
+488 × 4,733) and graph20-20-1rand, beats it on air05 (343 × 6,119 against 342 × 6,146) and comes close on neos-860300 and nu25-pr12.
 ex9 is still out of reach: its rows are implications x_j ≤ Σ x_k between binaries, which HiGHS's presolve removes
 completely by enumerating combinations of short rows; ours keeps 33,766 × 8,560 and its LP relaxation does not
 finish in 900 s (HiGHS 12 s). Running this set also found two bugs that are now fixed: integer columns without any
@@ -256,7 +256,7 @@ Two models built the way a coastal refinery like MRPL plans and schedules (`sama
 |---|---|---:|---:|---:|---|---|
 | Crude scheduling | S | 1,941 (882) | 0 / 3 of 3 | 1 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Crude scheduling | M | 5,385 (2,400) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
-| Crude scheduling | L | 14,262 (6,552) | 0 / 0 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
+| Crude scheduling | L | 14,262 (6,552) | 0 / 2 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
 | Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.0 s vs 5.8 s (median) |
 | Refinery planning | M | 13,824 (144) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Refinery planning | L | 35,976 (192) | 0 / 2 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
@@ -278,8 +278,17 @@ small MILP by a nested branch-and-bound, warm-started from the parent's basis, w
 at the root and in the tree while the gap exceeds 1 %, waiting twice as long after each call that found nothing.
 On the small crude instances it brings the schedule cost from 15,298 to 4,450 and from 45,814 to 1,585 (HiGHS:
 4,095 and 115); the third instance ends at 675 instead of 555 (HiGHS 275). On the medium instances its sub-MIPs are
-still too hard to help within a minute (HiGHS's schedules cost 2,640–31,465, ours 0.38–0.78 M), and on the large
-ones SAMADHAN finds no schedule.
+still too hard to help within a minute (HiGHS's schedules cost 2,640–31,465, ours 0.38–0.78 M). On the large
+instances SAMADHAN at first found no schedule at all, because on two of them the root LP did not finish: integer
+columns are not scaled (so that integrality is unchanged), and with this model's big-M coefficients (up to 499)
+that cost the dual simplex 12 (m + n) iterations instead of 0.9 (m + n) fully scaled, more than 120 s. A root LP
+that has taken 1.5 (m + n) iterations now continues on a copy of the model with every column scaled, from the
+basis where it stopped, and hands the optimal basis back (scaling does not change which columns are basic). Now
+SAMADHAN finds a schedule on two of the three large instances, one of them cheaper than HiGHS's (374,541 against
+647,923; the other 910,373 against 884,317). Every MIPLIB 3 root LP, and every other MRPL-shaped one, needs at
+most 1.3 (m + n) iterations and keeps exactly its path; on MIPLIB 2017 the switch decides neos-957323 (now a
+solution better than HiGHS's) and neos-662469 (whose solution is lost: the longer root leaves its heuristics
+less time).
 
 ### QP — Maros–Meszaros and refinery QP
 
@@ -313,9 +322,10 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
   has not been crossed over yet (roadmap).
 * The interior-point method factorises A Θ Aᵀ directly: models with dense columns (fit2p) are slow, as there is
   no dense-column splitting yet.
-* On the crude scheduling MILP (MRPL marine terminal) HiGHS finds cheaper schedules within 60 s: with RINS the
-  gap is down to 1.1–14× on the small instances, but on the medium ones HiGHS's schedules are 12–290× cheaper and on
-  the largest instances SAMADHAN finds none (no local branching yet, and RINS sub-MIPs there are too hard).
+* On the crude scheduling MILP (MRPL marine terminal) HiGHS mostly finds cheaper schedules within 60 s: with RINS
+  the gap is down to 1.1–14× on the small instances, but on the medium ones HiGHS's schedules are 12–290× cheaper,
+  and on the large ones SAMADHAN finds a schedule on two of three (one cheaper than HiGHS's). There is no local
+  branching yet, and RINS sub-MIPs on the larger instances are too hard to help within a minute.
 * Presolve has the standard primal reductions, dual fixing, parallel rows, doubleton substitution and probing,
   but no clique table or enumeration of small rows yet (HiGHS's presolve removes all of ex9 that way), and no
   dominated or duplicate columns or coefficient strengthening. The branch-and-cut root bound is still weaker than
@@ -445,7 +455,8 @@ docs/                idea deck (PDF), figures and the script that draws them
   result does not depend on the machine. Substituted columns are recovered in postsolve; the solution is mapped
   back to the original columns and checked against the original rows.
 * **LP / MILP (C++).** Every row gets a logical variable, so the simplex works on `[A −I]` with column
-  bounds, after geometric-mean scaling and equilibration (powers of two). The basis is held as a sparse LU
+  bounds, after geometric-mean scaling and equilibration (powers of two; integer columns keep the factor 1, and a
+  MILP root LP that is slow because of that continues on a fully scaled copy). The basis is held as a sparse LU
   factorisation: Markowitz pivot order with threshold pivoting, Forrest–Tomlin updates between
   refactorisations (the transformed entering column replaces its column of U, and one short row eta restores
   the triangular form; an update that loses accuracy triggers a refactorisation), a refactorisation trigger
