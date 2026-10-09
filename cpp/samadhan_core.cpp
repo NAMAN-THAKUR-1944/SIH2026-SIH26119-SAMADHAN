@@ -2368,6 +2368,8 @@ struct Solver {
         S.opt.max_lp_iter = max_iter;
         if (r != ITER_LIMIT) return r;
         root_on_copy = true;
+        if (opt.verbose)
+            std::printf("  root LP: %ld iterations, continuing on a fully scaled copy\n", S.iters);
         copy_iters += lp_on_scaled_copy();
         return S.solve();
     }
