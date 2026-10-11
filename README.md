@@ -31,6 +31,9 @@ HiGHS, the leading open-source solver, is used only as an outside referee for an
 
 🧪 **Check it yourself in 5 minutes:** [two Docker commands](#evaluate-it-in-5-minutes), nothing else to install
 
+❓ **Questions a reviewer will ask** (dependencies, accuracy, fairness of the benchmarks, the comparison with
+commercial solvers): [`docs/FAQ.md`](docs/FAQ.md)
+
 [![SAMADHAN demo video](docs/img/video_thumbnail.png)](https://youtu.be/zagX0zqtIeU)
 
 ## Results at a glance
@@ -404,6 +407,7 @@ python docs/make_figures.py              # the figures above
 ```
 samadhan/            the solver package
   pdlp.py            GPU engine for LP and QP (restarted PDHG, adaptive and CUDA-graph modes)
+  cuda_kernels.py    the GPU engine's fused CUDA C++ kernels, compiled at run time by NVRTC
   core.py            binding for the C++ core; compiles it with zig on first use
   mps.py, qpdata.py  model readers: MPS (free / fixed format, RANGES, OBJSENSE, integer markers), Maros-Meszaros .mat
   simplex.py, milp.py  pure-Python reference simplex and branch-and-bound, used to cross-check the C++ core
@@ -420,7 +424,7 @@ cpp/samadhan_core.cpp  C++17 dual simplex and branch-and-cut (C ABI)
 Dockerfile           CPU image by default; CUDA image with --build-arg TORCH_INDEX=.../whl/cu128
 benchmarks/          one script per benchmark; results/ holds their raw JSON output
 tests/               pytest suite: every component checked against HiGHS or a hand-computed optimum
-docs/                idea deck (PDF), figures and the script that draws them
+docs/                idea deck (PDF), FAQ, figures and the script that draws them
 ```
 
 ## How it works
