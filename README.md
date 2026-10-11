@@ -44,6 +44,7 @@ below, and are stored in [`results/`](results).
 | | What | Result |
 |---|---|---|
 | **LP** | Refinery planning LP, 1.16 M variables | **6.0× faster** than HiGHS at 1e-6 (cost within 0.0001 %), **35×** at 1e-4 |
+| **LP** | 14 Mittelmann LPfeas instances against NVIDIA cuOpt (GPU, 1e-4) | cuOpt is faster on 9 and accurate on all; SAMADHAN faster on 5 (accurate on 3 of them); HiGHS proves 5 of 14 in 300 s |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
 | **MILP** | MIPLIB 3 (all 65 models, 60 s) | **44 proved optimal**, all correct, and a feasible solution on 63; 4 of them HiGHS could not finish (mas76, nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
 | **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 38; HiGHS proves 18 and finds a solution on all 50; on 7 models SAMADHAN's solution is the better one |
@@ -198,6 +199,49 @@ stopped at its time limit short of 1e-4; crossover still finished exactly from t
 | maros-r7 | 9,408 | 0.67 s | 0.17 s | 6.8 s | 10.2× slower |
 | pilot | 3,652 | 0.90 s | 209 s | 1.9 s | 2.1× slower |
 | greenbea | 5,405 | 0.35 s | 300 s | 0.07 s | **4.6× faster** |
+
+### LP — Mittelmann's instances, against NVIDIA cuOpt
+
+The same laptop GPU against **NVIDIA cuOpt 26.08**, NVIDIA's open-source GPU solver, and HiGHS, on 14 LPs of
+Hans Mittelmann's LPfeas benchmark ([plato.asu.edu/ftp/lpfeas.html](https://plato.asu.edu/ftp/lpfeas.html);
+`python -m benchmarks.mittelmann`). Both GPU solvers run PDLP to an absolute and relative tolerance of 1e-4, the
+LPfeas criterion; HiGHS solves exactly; 300 s each. SAMADHAN's times include its setup on the GPU, cuOpt's
+everything after reading the file (its presolve and setup). The objective is checked where HiGHS proves the
+optimum:
+
+| Instance | Rows × columns | Nonzeros | HiGHS (exact) | SAMADHAN (1e-4) | cuOpt PDLP (1e-4) |
+|---|---:|---:|---:|---:|---:|
+| datt256 | 11,077 × 262,144 | 1,503,732 | > 300 s | 3.65 s | 2.06 s |
+| ex10 | 69,608 × 17,680 | 1,162,000 | 54.9 s | 0.65 s | 0.80 s |
+| graph40-40 | 360,900 × 102,600 | 1,260,900 | > 300 s | 0.87 s | 0.84 s |
+| irish-electricity | 104,259 × 61,728 | 523,257 | 64.1 s | 17.2 s (objective 3.6 % low) | 5.76 s |
+| neos-5052403-cygnet | 38,268 × 32,868 | 4,898,304 | > 300 s | 10.4 s | 4.53 s |
+| neos-5251015 | 486,531 × 136,971 | 1,955,388 | 107 s | 1.66 s (objective 0, optimum 0.106) | 2.49 s |
+| physiciansched3-3 | 266,227 × 79,555 | 1,062,479 | > 300 s | > 300 s | 24.7 s |
+| qap15 | 6,330 × 22,275 | 94,950 | > 300 s | 0.51 s | 0.34 s |
+| rmine15 | 358,395 × 42,438 | 879,732 | > 300 s | 21.9 s | 7.64 s |
+| s100 | 14,733 × 364,417 | 1,777,917 | > 300 s | > 300 s | 230 s |
+| s250r10 | 10,962 × 273,142 | 1,318,607 | 57.5 s | 5.45 s (objective −0.386, optimum −0.173) | 22.0 s |
+| savsched1 | 295,989 × 328,575 | 1,770,507 | > 300 s | 1.45 s | 1.68 s |
+| supportcase10 | 165,684 × 14,770 | 555,082 | 79.2 s | 6.30 s | 2.65 s |
+| woodlands09 | 194,599 × 382,147 | 2,646,003 | > 300 s | 1.76 s | 1.85 s |
+
+**cuOpt is the stronger GPU solver here.** It is faster on 9 of the 14 instances, solves two that SAMADHAN does not
+finish in 300 s (physiciansched3-3, s100), and its answers are accurate wherever the optimum is known (within
+0.07 %). SAMADHAN is faster with an accurate answer on ex10, savsched1 and woodlands09, and as fast on graph40-40.
+On three instances SAMADHAN's 1e-4 point passes the stopping test yet its objective is clearly off: the test
+compares norms of the residuals with norms of the data, and where the duals are large (irish-electricity: up to
+17,000) a residual of 0.05 in a few rows still moves the objective by thousands. At 1e-5 neos-5251015 comes out
+exact in 4.1 s and s250r10 within 1e-4 in 76 s (cuOpt: 22 s); irish-electricity does not get further within 300 s.
+Both GPU solvers are far ahead of HiGHS on models of this size: HiGHS proves 5 of the 14 within 300 s. Closing the
+gap to cuOpt is on the roadmap: a presolve for the GPU engine, a stopping test that also bounds the objective
+error, and cuOpt's newer restart scheme.
+
+How it was run: cuOpt in its Docker image (`nvidia/cuopt:latest-cu13`) on the same RTX 5050. The image is built for
+CUDA 13.3 and the laptop's driver supports 13.1; with `NVIDIA_DISABLE_REQUIRE=1` cuOpt's PDLP runs, while its
+default concurrent mode (PDLP, barrier and dual simplex at once) crashes on start, so cuOpt is measured with
+PDLP alone. Three of the 17 instances downloaded (bdry2, L1_sixm250obs, Linf_520c) are stored in Netlib's
+compressed-MPS encoding, which none of the three solvers reads; they were left out.
 
 ### MILP — MIPLIB 3
 
@@ -432,6 +476,9 @@ python -m benchmarks.netlib              # Netlib LPs, GPU engine         -> res
 python -m benchmarks.netlib --engine core   # Netlib LPs, C++ simplex     -> results/lp_netlib_core.json
 python -m benchmarks.netlib --engine ipm    # Netlib LPs, IPM + crossover -> results/lp_netlib_ipm.json
 python -m benchmarks.crossover --with-L     # cold simplex vs crossover    -> results/lp_crossover.json
+# 14 .mps.bz2 files from plato.asu.edu/ftp/lptestset (names in benchmarks/mittelmann.py), bunzip2 -> data/mittelmann
+python -m benchmarks.mittelmann           # SAMADHAN + HiGHS               -> results/lp_mittelmann.json
+python -m benchmarks.mittelmann --cuopt   # NVIDIA cuOpt in Docker (GPU)  -> results/lp_mittelmann.json
 git clone https://github.com/coin-or-tools/Data-miplib3 data/miplib3
 python -m benchmarks.miplib              # MIPLIB 3                       -> results/milp_miplib3.json
 python -m benchmarks.miplib --set miplib2017   # 50 MIPLIB 2017 models     -> results/milp_miplib2017.json

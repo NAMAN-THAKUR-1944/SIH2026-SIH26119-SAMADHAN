@@ -24,6 +24,13 @@ We have no licences for them, so we compare with HiGHS, the strongest open-sourc
 commercial solvers are generally faster than HiGHS, so expect the gap to them to be larger than the gap to HiGHS
 shown in the README. We do not claim parity with them on MILP.
 
+### And with NVIDIA cuOpt, the other GPU solver?
+
+Measured on the same laptop GPU on 14 of Hans Mittelmann's LP benchmark instances (README, "LP — Mittelmann's
+instances"): cuOpt's PDLP is faster on 9 of them and accurate on all, SAMADHAN is faster on 5 but its 1e-4 answer
+is noticeably off on 2 of those, and both are far ahead of HiGHS. cuOpt is ahead of us on large LPs today; closing
+that gap (a presolve for the GPU engine, a stopping test that bounds the objective error) is on the roadmap.
+
 ### Where is SAMADHAN faster than HiGHS, and where slower?
 
 Faster: large LPs on the GPU (the 1.16 M-variable refinery planning LP), large convex QPs (from 110k variables HiGHS

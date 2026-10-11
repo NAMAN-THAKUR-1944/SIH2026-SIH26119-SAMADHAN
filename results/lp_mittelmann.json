@@ -1,0 +1,502 @@
+[
+ {
+  "name": "datt256",
+  "m": 11077,
+  "n": 262144,
+  "nnz": 1503732,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 255.9999999999667,
+   "time": 300.0306204999797
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 0.7837325999280438,
+   "setup": 2.8649941999465227,
+   "iters": 640,
+   "obj": 256.0000598147643,
+   "rel_p": 9.258199329048675e-05,
+   "rel_d": 0.0,
+   "rel_gap": 2.9631000404091062e-05,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 256.00123855252133,
+   "time": 2.05724549200022,
+   "solver_time": 0.960815508,
+   "read": 1.4655107109992969,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "ex10",
+  "m": 69608,
+  "n": 17680,
+  "nnz": 1162000,
+  "highs": {
+   "status": "Optimal",
+   "obj": 99.99999999999946,
+   "time": 54.92152009997517
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 0.27073749992996454,
+   "setup": 0.37455450010020286,
+   "iters": 384,
+   "obj": 100.00007271268193,
+   "rel_p": 6.73892377495782e-06,
+   "rel_d": 0.0,
+   "rel_gap": 1.212779588619403e-05,
+   "device": "cuda+native",
+   "obj_err": 7.271268246711354e-07
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 100.00577831093709,
+   "time": 0.7975786679999146,
+   "solver_time": 0.583753884,
+   "read": 0.994500146000064,
+   "obj_err": 5.778310937628848e-05
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "graph40-40",
+  "m": 360900,
+  "n": 102600,
+  "nnz": 1260900,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -300.0,
+   "time": 300.02721480000764
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 0.29195950005669147,
+   "setup": 0.5761323999613523,
+   "iters": 192,
+   "obj": -300.0,
+   "rel_p": 1.4089600219325268e-05,
+   "rel_d": 0.0,
+   "rel_gap": 1.8988926162378088e-05,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": -300.0,
+   "time": 0.8351429370004553,
+   "solver_time": 0.33492797,
+   "read": 3.0559435889999804,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "irish-electricity",
+  "m": 104259,
+  "n": 61728,
+  "nnz": 523257,
+  "highs": {
+   "status": "Optimal",
+   "obj": 2546254.563319338,
+   "time": 64.1362748000538
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 16.980643399991095,
+   "setup": 0.2101943000452593,
+   "iters": 72128,
+   "obj": 2454380.229408593,
+   "rel_p": 3.6506617956203268e-06,
+   "rel_d": 9.864606848622924e-05,
+   "rel_gap": 2.290040514120686e-07,
+   "device": "cuda+native",
+   "obj_err": 0.03608214796519648
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 2544438.1561470935,
+   "time": 5.756481452000116,
+   "solver_time": 5.575700982,
+   "read": 1.031251197000529,
+   "obj_err": 0.0007133643267296144
+  },
+  "samadhan_tight": {
+   "tol": 1e-05,
+   "status": "time_limit",
+   "time": 301.77,
+   "obj": 2454384.2,
+   "obj_err": 0.036,
+   "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "neos-5052403-cygnet",
+  "m": 38268,
+  "n": 32868,
+  "nnz": 4898304,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 177.8181147920612,
+   "time": 300.00853160000406
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 9.038716100039892,
+   "setup": 1.3127803999232128,
+   "iters": 9728,
+   "obj": 179.499936241549,
+   "rel_p": 3.4210712325804158e-06,
+   "rel_d": 0.0,
+   "rel_gap": 9.946932979943588e-05,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 179.46816845454077,
+   "time": 4.528421259999959,
+   "solver_time": 3.839043502,
+   "read": 2.161022420000336,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "neos-5251015",
+  "m": 486531,
+  "n": 136971,
+  "nnz": 1955388,
+  "highs": {
+   "status": "Optimal",
+   "obj": 0.1058,
+   "time": 106.87053419998847
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 0.8280238999286667,
+   "setup": 0.8316680999705568,
+   "iters": 1024,
+   "obj": 0.0,
+   "rel_p": 5.657469131102904e-07,
+   "rel_d": 3.504129624825145e-10,
+   "rel_gap": 2.994413192837939e-05,
+   "device": "cuda+native",
+   "obj_err": 0.1058
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 0.1058,
+   "time": 2.4930514039997433,
+   "solver_time": 1.934121075,
+   "read": 3.7605663730000742,
+   "obj_err": 0.0
+  },
+  "samadhan_tight": {
+   "tol": 1e-05,
+   "status": "optimal",
+   "time": 4.09,
+   "obj": 0.1058,
+   "obj_err": 3.2e-10,
+   "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "physiciansched3-3",
+  "m": 266227,
+  "n": 79555,
+  "nnz": 1062479,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 1926887.6892789414,
+   "time": 300.01444709999487
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "time": 300.0340739999665,
+   "setup": 0.4737372000236064,
+   "iters": 445568,
+   "obj": 0.0,
+   "rel_p": 0.27816861622201355,
+   "rel_d": 0.5,
+   "rel_gap": 0.0,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 2431233.1016335827,
+   "time": 24.710577343000296,
+   "solver_time": 24.382973642,
+   "read": 2.324341942000501,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "qap15",
+  "m": 6330,
+  "n": 22275,
+  "nnz": 94950,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 1034.8076470244791,
+   "time": 300.003647100064
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 0.48330320010427386,
+   "setup": 0.02716240007430315,
+   "iters": 2624,
+   "obj": 1041.023613225361,
+   "rel_p": 9.813881560137593e-05,
+   "rel_d": 8.752981466718968e-06,
+   "rel_gap": 2.0400102620201952e-05,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 1041.0150978686147,
+   "time": 0.3350891780000893,
+   "solver_time": 0.290129054,
+   "read": 0.137089114000446,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "rmine15",
+  "m": 358395,
+  "n": 42438,
+  "nnz": 879732,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -5058.8849319625,
+   "time": 300.04801920009777
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 21.488447100040503,
+   "setup": 0.4509265999076888,
+   "iters": 15168,
+   "obj": -5042.15664978344,
+   "rel_p": 9.867458082426557e-05,
+   "rel_d": 0.0,
+   "rel_gap": 4.269558196893814e-05,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": -5042.13993442135,
+   "time": 7.644680399999743,
+   "solver_time": 7.161330876,
+   "read": 2.230064847999529,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "s100",
+  "m": 14733,
+  "n": 364417,
+  "nnz": 1777917,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": -0.18174373703570773,
+   "time": 300.02356909995433
+  },
+  "samadhan": {
+   "status": "time_limit",
+   "time": 300.02453279995825,
+   "setup": 0.9096904000034556,
+   "iters": 220480,
+   "obj": -0.1702462700064763,
+   "rel_p": 4.2504798376596025e-07,
+   "rel_d": 0.0,
+   "rel_gap": 0.0006512246201170042,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": -0.1709867290632801,
+   "time": 229.60942622200037,
+   "solver_time": 228.804732169,
+   "read": 2.8990453870001147,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "s250r10",
+  "m": 10962,
+  "n": 273142,
+  "nnz": 1318607,
+  "highs": {
+   "status": "Optimal",
+   "obj": -0.17267704190548072,
+   "time": 57.51704690000042
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 4.755706700030714,
+   "setup": 0.6947809000266716,
+   "iters": 7232,
+   "obj": -0.385564426069184,
+   "rel_p": 3.25940564435824e-06,
+   "rel_d": 0.0,
+   "rel_gap": 3.582677564781971e-05,
+   "device": "cuda+native",
+   "obj_err": 0.21288738416370329
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": -0.17277533292306027,
+   "time": 21.96036195400029,
+   "solver_time": 21.402385778,
+   "read": 2.130803619999824,
+   "obj_err": 9.829101757954928e-05
+  },
+  "samadhan_tight": {
+   "tol": 1e-05,
+   "status": "optimal",
+   "time": 76.16,
+   "obj": -0.17278087,
+   "obj_err": 0.0001,
+   "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "savsched1",
+  "m": 295989,
+  "n": 328575,
+  "nnz": 1770507,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 217.40357142858193,
+   "time": 300.03584200004116
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 0.5519231000216678,
+   "setup": 0.897619100054726,
+   "iters": 576,
+   "obj": 217.41207071282582,
+   "rel_p": 2.3216501793076436e-06,
+   "rel_d": 1.1216132252230668e-06,
+   "rel_gap": 5.418314822084503e-05,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 217.43083901075426,
+   "time": 1.6845668169999044,
+   "solver_time": 1.029828636,
+   "read": 3.350915996999902,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "supportcase10",
+  "m": 165684,
+  "n": 14770,
+  "nnz": 555082,
+  "highs": {
+   "status": "Optimal",
+   "obj": 3.3839236661380028,
+   "time": 79.16819679993205
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 6.05908829998225,
+   "setup": 0.24180560000240803,
+   "iters": 22016,
+   "obj": 3.3839223049838867,
+   "rel_p": 8.756553404887773e-08,
+   "rel_d": 0.0,
+   "rel_gap": 9.904974827261842e-05,
+   "device": "cuda+native",
+   "obj_err": 4.0224137728252535e-07
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 3.3839923575139914,
+   "time": 2.6458641489998627,
+   "solver_time": 2.466955372,
+   "read": 1.253667220999887,
+   "obj_err": 2.0299327870783407e-05
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ },
+ {
+  "name": "woodlands09",
+  "m": 194599,
+  "n": 382147,
+  "nnz": 2646003,
+  "highs": {
+   "status": "Time limit reached",
+   "obj": 0.0,
+   "time": 300.4551216000691
+  },
+  "samadhan": {
+   "status": "optimal",
+   "time": 0.7096690000034869,
+   "setup": 1.0532918000826612,
+   "iters": 832,
+   "obj": 0.0,
+   "rel_p": 6.421406100447265e-07,
+   "rel_d": 0.0,
+   "rel_gap": 3.474819466077662e-05,
+   "device": "cuda+native",
+   "obj_err": null
+  },
+  "time_limit": 300.0,
+  "tol": 0.0001,
+  "cuopt": {
+   "status": "Optimal",
+   "obj": 0.0,
+   "time": 1.8505062030008048,
+   "solver_time": 1.112846608,
+   "read": 3.386204581000129,
+   "obj_err": null
+  },
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+ }
+]
