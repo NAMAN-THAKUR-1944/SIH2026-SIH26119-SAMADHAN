@@ -344,7 +344,7 @@ python -m venv .venv
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128   # or /whl/cpu
 .venv/Scripts/pip install -r requirements.txt
 .venv/Scripts/python -m samadhan verify                         # self-check of every engine, ~10 s
-.venv/Scripts/python -m pytest                                  # 65 correctness tests, ~45 s
+.venv/Scripts/python -m pytest                                  # 70 correctness tests, ~45 s
 .venv/Scripts/python -m samadhan demo --size XL --tol 1e-6      # 1.16M-variable refinery LP on the GPU
 .venv/Scripts/python -m samadhan solve model.mps                # engine picked from the model
 .venv/Scripts/python -m samadhan solve model.mps --engine core  # force the C++ dual simplex / branch-and-cut
@@ -375,7 +375,9 @@ pyo.SolverFactory("samadhan").solve(model, timelimit=60)    # values are loaded 
 
 Both plugins hand the model to the same engines as above and return the solution, status and bound in the
 modelling layer's own terms; on a small crude-selection model with binaries, integers, ranged rows and a maximised
-objective both give the HiGHS optimum and values (`tests/test_samadhan.py`).
+objective both give the HiGHS optimum and values (`tests/test_samadhan.py`). A complete, readable example (crude
+cargoes, a crude unit that runs or not, a sulfur limit): `python -m examples.pulp_crude_selection`
+([`examples/pulp_crude_selection.py`](examples/pulp_crude_selection.py)).
 
 The C++ core is compiled automatically on first use with the zig toolchain (installed from PyPI with the
 requirements), so no system compiler is needed. CI lints the code, builds the core and runs the tests on
@@ -427,6 +429,7 @@ Dockerfile           CPU image by default; CUDA image with --build-arg TORCH_IND
 benchmarks/          one script per benchmark; results/ holds their raw JSON output
 tests/               pytest suite: every component checked against HiGHS or a hand-computed optimum
 docs/                idea deck (PDF), FAQ, figures and the script that draws them
+examples/            a crude-selection MILP written in PuLP and solved by SAMADHAN
 ```
 
 ## How it works
