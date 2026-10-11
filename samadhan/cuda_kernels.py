@@ -193,7 +193,7 @@ def _load_libs():
     else:
         site = Path(torch.__file__).parent.parent
         cands = sorted(lib.glob("libnvrtc*.so*")) + sorted((site / "nvidia" / "cuda_nvrtc" / "lib").glob("libnvrtc.so*"))
-        nvrtc = next((p for p in cands if "builtins" not in p.name), None) or "libnvrtc.so.12"
+        nvrtc = next((p for p in cands if "builtins" not in p.name and ".alt" not in p.name), None) or "libnvrtc.so.12"
         driver = "libcuda.so.1"
     if nvrtc is None:
         raise OSError("NVRTC not found next to PyTorch")

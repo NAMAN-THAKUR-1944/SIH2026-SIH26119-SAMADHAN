@@ -106,8 +106,8 @@ docker build --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu128 -t s
 docker run --rm --gpus all samadhan:gpu demo --size XL --tol 1e-6
 ```
 
-On the RTX 5050 laptop this took 73.7 s inside Docker and 65.5 s natively when the image was last built, before
-the engine had its own CUDA kernels (natively it now takes 54 s), against 323 s for HiGHS.
+On the RTX 5050 laptop this takes 57.7 s inside Docker and 54.0 s natively, with the same 62,912 iterations (the
+CUDA kernels are compiled inside the container by the NVRTC that comes with PyTorch), against 323 s for HiGHS.
 `docker run --rm --gpus all samadhan:gpu` runs the self-check on the GPU, and the full test suite passes in the GPU
 image.
 
