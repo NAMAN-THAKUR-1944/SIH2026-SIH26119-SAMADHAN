@@ -1,12 +1,14 @@
 """Benchmark behind the README table and the SIH26119 deck -> results/lp_refinery.json.
 
 For every refinery planning LP size and two accuracy targets (1e-4 and 1e-6 relative KKT), SAMADHAN runs both
-of its GPU methods (adaptive-step PDLP, and constant-step PDLP replayed as CUDA graphs). HiGHS runs both of its
+of its GPU methods (adaptive-step PDLP, and constant-step PDLP replayed as CUDA graphs), on the fused native CUDA
+kernels and, with --compare-torch, also on PyTorch operations (runs "adaptive-torch", "graph-torch"). HiGHS runs both of its
 methods (dual simplex, the default, and interior point). Each solver is credited with its faster method; every
 raw timing is kept.
 
     python -m benchmarks.lp                  # all sizes (HiGHS simplex on XL alone takes 15 min)
     python -m benchmarks.lp M L --reuse-highs  # rerun SAMADHAN only, keep HiGHS timings from results/lp_refinery.json
+    python -m benchmarks.lp --reuse-highs --compare-torch   # also time the PyTorch path
 """
 import argparse
 import json
@@ -31,6 +33,7 @@ def main():
     ap.add_argument("sizes", nargs="*", default=list(REFINERY_SIZES), choices=list(REFINERY_SIZES))
     ap.add_argument("--reuse-highs", action="store_true", help="take HiGHS timings from the existing results file")
     ap.add_argument("--time-limit", type=float, default=900.0)
+    ap.add_argument("--compare-torch", action="store_true", help="also run the GPU methods on PyTorch operations")
     a = ap.parse_args()
 
     rows = {r["size"]: r for r in json.loads(OUT.read_text())} if OUT.exists() else {}
@@ -41,17 +44,20 @@ def main():
         highs = rows[key]["highs"] if a.reuse_highs and key in rows else run_highs(lp, a.time_limit)
         print(f"  HiGHS best: {highs['best']['method']} {highs['best']['time']:.1f}s", flush=True)
         ref = highs["best"]["obj"]
-        solver = PDLP(lp, "cuda")
+        solvers = [PDLP(lp, "cuda")] + ([PDLP(lp, "cuda", native=False)] if a.compare_torch else [])
         row = dict(size=key, n=n, m=m, nnz=int(lp.K.nnz), highs=highs, samadhan={})
         for tol in (1e-4, 1e-6):
             runs = {}
-            for mode, adaptive in (("adaptive", True), ("graph", False)):
-                r = solver.solve(tol=tol, adaptive=adaptive, time_limit=a.time_limit, max_iter=10**7)
-                err = abs(r.primal_obj - ref) / abs(ref)
-                runs[mode] = dict(status=r.status, time=r.solve_time, iters=r.iterations, obj=r.primal_obj,
-                                  obj_err=err, rel_gap=r.rel_gap, rel_p=r.rel_primal_res, rel_d=r.rel_dual_res)
-                print(f"  tol {tol:g} {mode:8} {r.status:>8} {r.solve_time:7.2f}s  iters {r.iterations:7d}  "
-                      f"cost err {err:.1e}", flush=True)
+            for solver in solvers:
+                for mode, adaptive in (("adaptive", True), ("graph", False)):
+                    r = solver.solve(tol=tol, adaptive=adaptive, time_limit=a.time_limit, max_iter=10**7)
+                    name = mode if solver.native is not None else f"{mode}-torch"
+                    err = abs(r.primal_obj - ref) / abs(ref)
+                    runs[name] = dict(status=r.status, time=r.solve_time, iters=r.iterations, obj=r.primal_obj,
+                                      obj_err=err, rel_gap=r.rel_gap, rel_p=r.rel_primal_res, rel_d=r.rel_dual_res,
+                                      device=r.device)
+                    print(f"  tol {tol:g} {name:14} {r.status:>8} {r.solve_time:7.2f}s  iters {r.iterations:7d}  "
+                          f"cost err {err:.1e}  {r.device}", flush=True)
             ok = [v | dict(mode=k) for k, v in runs.items() if v["status"] == "optimal"]
             best = min(ok, key=lambda v: v["time"]) if ok else None
             row["samadhan"][f"{tol:g}"] = dict(runs=runs, best=best)

@@ -60,6 +60,50 @@ def test_pdlp_refinery_matches_highs(device):
     assert r.status == "optimal" and rel(r.primal_obj, ref) < 1e-5
 
 
+def _native_available():
+    if not torch.cuda.is_available():
+        return False
+    from samadhan import cuda_kernels
+    return cuda_kernels.available()
+
+
+NATIVE = _native_available()
+
+
+@pytest.mark.skipif(not NATIVE, reason="needs CUDA and NVRTC")
+def test_native_kernels_match_torch_iterates():
+    """The fused native constant-step iteration computes the iterates of the PyTorch one."""
+    lp = refinery_lp(R=3, C=5, P=4, D=20, T=4, seed=1)
+    states = []
+    for native in (False, True):
+        P = PDLP(lp, device="cuda", native=native)
+        assert (P.native is not None) == native
+        z = lambda k: torch.zeros(k, dtype=torch.float64, device="cuda")
+        scalar = lambda v: torch.tensor(v, dtype=torch.float64, device="cuda")
+        step = 0.9 / P._norm_K()
+        S = dict(x=P._proj_x(z(P.n)), y=z(P.m), xs=z(P.n), ys=z(P.m), Kxs=z(P.m), KTys=z(P.n),
+                 tau=scalar(step), sigma=scalar(step), k=scalar(0.0))
+        S.update(Kx=torch.mv(P.K, S["x"]), KTy=torch.mv(P.KT, S["y"]))
+        for _ in range(300):
+            P._step_inplace(S)
+        states.append(S)
+    for name in ("x", "y", "Kx", "KTy", "xs", "ys", "Kxs", "KTys"):
+        a, b = states[0][name], states[1][name]
+        assert float((a - b).abs().max()) <= 1e-10 * max(1.0, float(a.abs().max())), name
+
+
+@pytest.mark.skipif(not NATIVE, reason="needs CUDA and NVRTC")
+@pytest.mark.parametrize("adaptive", [True, False])
+def test_native_kernels_solve_matches_highs(adaptive):
+    lp = refinery_lp(R=3, C=5, P=4, D=20, T=4, seed=1)
+    ref = solve_highs(lp)["obj"]
+    runs = [PDLP(lp, device="cuda", native=True).solve(tol=1e-6, max_iter=200_000, adaptive=adaptive)
+            for _ in range(2)]
+    r = runs[0]
+    assert r.status == "optimal" and r.device.endswith("+native") and rel(r.primal_obj, ref) < 1e-5
+    assert (runs[1].iterations, runs[1].primal_obj) == (r.iterations, r.primal_obj)      # repeatable
+
+
 def test_simplex_matches_highs_on_relaxation():
     lp = dataclasses.replace(refinery_milp(seed=3), integer=None)
     status, _, obj = solve_lp_dense(lp)

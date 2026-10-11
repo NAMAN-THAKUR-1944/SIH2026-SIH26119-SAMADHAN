@@ -82,7 +82,7 @@ def _to_torch_csr(A: sp.csr_matrix, device, dtype):
 
 # --------------------------------------------------------------------------- solver
 class PDLP:
-    def __init__(self, lp: LP, device="cuda", dtype=torch.float64):
+    def __init__(self, lp: LP, device="cuda", dtype=torch.float64, native=None):
         t0 = time.perf_counter()
         if device == "cuda" and not torch.cuda.is_available():
             device = "cpu"
@@ -108,6 +108,14 @@ class PDLP:
         self.Q = None
         if Q is not None and Q.nnz:
             self.Q = _to_torch_csr((sp.diags(dc) @ sp.csr_matrix(Q) @ sp.diags(dc)).tocsr(), device, dtype)
+        # fused native CUDA kernels for the constant-step iteration (LP, float64); native=None: when available
+        self.native = None
+        if device == "cuda" and dtype == torch.float64 and self.Q is None and native is not False:
+            from . import cuda_kernels
+            if cuda_kernels.available(device):
+                self.native = cuda_kernels.NativePDHG(self.K, self.KT, lp.n_eq)
+            elif native:
+                raise RuntimeError("native CUDA kernels requested but NVRTC or the CUDA driver is not usable")
         self.c_norm = float(np.linalg.norm(lp.c))
         self.q_norm = float(np.linalg.norm(lp.q))
         if device == "cuda":
@@ -172,6 +180,9 @@ class PDLP:
     def _step_inplace(self, S):
         """One constant-step PDHG iteration, entirely in place on the static buffers in S.
         With a quadratic objective the primal step uses the gradient Qx + c - K'y (linearised PDHG)."""
+        if self.native is not None:
+            self.native.step(S, self.c, self.l, self.u, self.q)
+            return
         grad = self.c - S["KTy"]
         if self.Q is not None:
             grad = grad + S["Qx"]
@@ -300,7 +311,8 @@ class PDLP:
         kb, xb, yb = best
         return Result(status, (xb * self.dc).cpu().numpy(), (yb * self.dr).cpu().numpy(), kb["p"], kb["d"],
                       kb["rel"][2], kb["rel"][0], kb["rel"][1], k_total, 2 * k_total + 80, restarts,
-                      solve_time, self.setup_time, dev + ("+graph" if cuda else ""))
+                      solve_time, self.setup_time,
+                      dev + ("+graph" if cuda else "") + ("+native" if self.native is not None else ""))
 
     # ------------------------------------------------------------------ main loop
     def solve(self, tol=1e-4, max_iter=200_000, time_limit=600.0, eval_every=64, verbose=False, adaptive=True):
@@ -327,6 +339,12 @@ class PDLP:
 
         # averaging / restart state
         xs, ys, Kxs, KTys, wsum = [torch.zeros_like(v) for v in (x, y, Kx, KTy)] + [0.0]
+        # native kernels: candidate buffers, and the averaging of the last accepted point deferred to the next
+        # attempt (weight pend) or to the next evaluation
+        nat = self.native
+        if nat is not None:
+            xn, yn, Kxn, KTyn = (torch.empty_like(v) for v in (x, y, Kx, KTy))
+        pend = 0.0
         x_rs, y_rs = x.clone(), y.clone()
         k0 = self._kkt(x, y, Kx, KTy)
         kkt_rs = self._kkt_w(k0, w)
@@ -338,13 +356,19 @@ class PDLP:
             # ---- one adaptive-step PDHG iteration (retried with a smaller step if rejected)
             while True:
                 tau, sigma = eta / w, eta * w
-                xn = self._proj_x(x - tau * (self.c - KTy))
-                Kxn = self._mv(self.K, xn)
-                yn = self._proj_y(y + sigma * (self.q - 2 * Kxn + Kx))
-                KTyn = self._mv(self.KT, yn)
+                if nat is not None:
+                    ip, dxx, dyy = nat.attempt(x, y, Kx, KTy, xn, yn, Kxn, KTyn, xs, ys, Kxs, KTys,
+                                               self.c, self.l, self.u, self.q, tau, sigma, pend)
+                    pend = 0.0
+                else:
+                    xn = self._proj_x(x - tau * (self.c - KTy))
+                    Kxn = self._mv(self.K, xn)
+                    yn = self._proj_y(y + sigma * (self.q - 2 * Kxn + Kx))
+                    KTyn = self._mv(self.KT, yn)
+                    dx, dy = xn - x, yn - y
+                    ip, dxx, dyy = torch.stack([torch.dot(dy, Kxn - Kx), torch.dot(dx, dx),
+                                                torch.dot(dy, dy)]).tolist()
                 matvecs += 2
-                dx, dy = xn - x, yn - y
-                ip, dxx, dyy = torch.stack([torch.dot(dy, Kxn - Kx), torch.dot(dx, dx), torch.dot(dy, dy)]).tolist()
                 inter = abs(ip)
                 move = 0.5 * w * dxx + 0.5 * dyy / w
                 eta_lim = move / inter if inter > 1e-30 else float("inf")
@@ -354,10 +378,14 @@ class PDLP:
                 if eta <= eta_lim:
                     break
                 eta = eta_new
-            x, y, Kx, KTy = xn, yn, Kxn, KTyn
             wsum += eta
             a = eta / wsum
-            xs.lerp_(x, a); ys.lerp_(y, a); Kxs.lerp_(Kx, a); KTys.lerp_(KTy, a)
+            if nat is not None:
+                x, xn, y, yn, Kx, Kxn, KTy, KTyn = xn, x, yn, y, Kxn, Kx, KTyn, KTy
+                pend = a
+            else:
+                x, y, Kx, KTy = xn, yn, Kxn, KTyn
+                xs.lerp_(x, a); ys.lerp_(y, a); Kxs.lerp_(Kx, a); KTys.lerp_(KTy, a)
             eta = eta_new
             k_total += 1
             k_since += 1
@@ -366,6 +394,9 @@ class PDLP:
                 continue
 
             # ---- evaluate current and average, check termination and restart
+            if pend:
+                xs.lerp_(x, pend); ys.lerp_(y, pend); Kxs.lerp_(Kx, pend); KTys.lerp_(KTy, pend)
+                pend = 0.0
             kc = self._kkt(x, y, Kx, KTy)
             ka = self._kkt(xs, ys, Kxs, KTys)
             use_avg = self._kkt_w(ka, w) < self._kkt_w(kc, w)
@@ -411,13 +442,14 @@ class PDLP:
         x_orig = (xb * self.dc).cpu().numpy()
         y_orig = (yb * self.dr).cpu().numpy()
         return Result(status, x_orig, y_orig, kb["p"], kb["d"], kb["rel"][2], kb["rel"][0], kb["rel"][1],
-                      k_total, matvecs, restarts, solve_time, self.setup_time, dev)
+                      k_total, matvecs, restarts, solve_time, self.setup_time,
+                      dev + ("+native" if nat is not None else ""))
 
 
-def solve(lp: LP, device="cuda", crossover=False, **kw) -> Result:
+def solve(lp: LP, device="cuda", crossover=False, native=None, **kw) -> Result:
     """GPU engine. With crossover=True (LP only) the first-order solution is turned into an exact optimal vertex
     by the C++ simplex (samadhan.core.crossover); y stays the first-order dual estimate."""
-    r = PDLP(lp, device=device).solve(**kw)
+    r = PDLP(lp, device=device, native=native).solve(**kw)
     if not crossover or (lp.Q is not None and lp.Q.nnz):
         return r
     from .core import crossover as run_crossover
