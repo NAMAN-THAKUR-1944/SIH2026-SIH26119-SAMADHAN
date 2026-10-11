@@ -542,4 +542,16 @@ examples/            a crude-selection MILP written in PuLP and solved by SAMADH
 
 ## Team and license
 
-Team VIGHNAX (127364), SRM University, for Smart India Hackathon 2026. Licensed under [Apache-2.0](LICENSE).
+Team VIGHNAX (127364), SRM University, for Smart India Hackathon 2026. Each member owns one part of the solver and
+answers for it:
+
+| Member | Module | Files |
+|---|---|---|
+| Naman Thakur (lead) | architecture; C++ LP core: sparse LU, Forrest–Tomlin update, simplex, crossover | `cpp/samadhan_core.cpp` (LP), `samadhan/core.py` |
+| Sayom Shani | GPU engine: PDLP / PDQP, native CUDA kernels, CUDA graphs | `samadhan/pdlp.py`, `samadhan/cuda_kernels.py` |
+| Lahari | presolve, probing, model readers | `samadhan/presolve.py`, `samadhan/mps.py`, `samadhan/qpdata.py` |
+| Avinash | branch-and-cut: cuts, branching, heuristics (pump, diving, fix-and-propagate, RINS) | `cpp/samadhan_core.cpp` (MILP) |
+| Rajat Goel | interior point, verification, tests, CI, Docker | `samadhan/ipm.py`, `samadhan/verify.py`, `tests/`, `Dockerfile` |
+| Manit Thakur | MRPL models, PuLP / Pyomo plugins, benchmarks, demo | `samadhan/crude.py`, `samadhan/generate.py`, `samadhan/*_solver.py`, `benchmarks/` |
+
+Licensed under [Apache-2.0](LICENSE).
