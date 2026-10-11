@@ -4,22 +4,22 @@
   "m": 2544,
   "n": 13296,
   "cold": {
-   "time": 0.7653647999739311,
+   "time": 0.7401339000040367,
    "iterations": 6713,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 2.000543500005733,
-   "crossover_time": 0.0869815000332892,
-   "iterations": 1057,
+   "gpu_time": 0.9878909999970347,
+   "crossover_time": 0.09581329999491572,
+   "iterations": 979,
    "status": "optimal",
-   "err": 2.1166013190011596e-15,
-   "viol": 3.339634306639187e-16
+   "err": 9.768929164620737e-16,
+   "viol": 2.1092427199826443e-16
   },
   "ipm_x": {
-   "time": 0.44164450000971556,
+   "time": 0.43518279993440956,
    "iterations": 35,
-   "crossover_time": 0.06994349998421967,
+   "crossover_time": 0.07153369998559356,
    "status": "optimal",
    "err": 1.4653393746931104e-15,
    "viol": 6.654550925153577e-16
@@ -30,17 +30,17 @@
   "m": 12264,
   "n": 109536,
   "cold": {
-   "time": 53.47543070003372,
+   "time": 51.623840000025616,
    "iterations": 71700,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 3.1174910999834538,
-   "crossover_time": 2.644353099982254,
-   "iterations": 7422,
+   "gpu_time": 1.5008431999012828,
+   "crossover_time": 3.2269691000692546,
+   "iterations": 8861,
    "status": "optimal",
-   "err": 1.7649964435056603e-15,
-   "viol": 1.4210854715202004e-14
+   "err": 2.7277217763269297e-15,
+   "viol": 8.716999460069054e-16
   },
   "ipm_x": null
  },
@@ -49,17 +49,17 @@
   "m": 31536,
   "n": 406080,
   "cold": {
-   "time": 758.2351172999977,
+   "time": 673.0433576000615,
    "iterations": 254416,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 5.549631999980193,
-   "crossover_time": 37.13670739997178,
-   "iterations": 21357,
+   "gpu_time": 3.3044515000656247,
+   "crossover_time": 35.979907499975525,
+   "iterations": 23626,
    "status": "optimal",
-   "err": 2.237370246493628e-15,
-   "viol": 2.9002420065171074e-16
+   "err": 1.5981216046383057e-16,
+   "viol": 9.435037691855295e-16
   },
   "ipm_x": null
  },
@@ -68,22 +68,22 @@
   "m": 821,
   "n": 1571,
   "cold": {
-   "time": 0.11919820002196059,
+   "time": 0.11639000002354086,
    "iterations": 2566,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 3.990544600004796,
-   "crossover_time": 0.021058499987702817,
-   "iterations": 158,
+   "gpu_time": 1.5493381000123918,
+   "crossover_time": 0.02395459997933358,
+   "iterations": 225,
    "status": "optimal",
-   "err": 6.612287732080701e-16,
-   "viol": 2.2441929485276528e-15
+   "err": 4.959215799060526e-16,
+   "viol": 7.243913947779132e-16
   },
   "ipm_x": {
-   "time": 0.32483009999850765,
+   "time": 0.3101541999494657,
    "iterations": 28,
-   "crossover_time": 0.01829789998009801,
+   "crossover_time": 0.017321799998171628,
    "status": "optimal",
    "err": 6.612287732080701e-16,
    "viol": 9.338967491499569e-16
@@ -94,22 +94,22 @@
   "m": 2262,
   "n": 9799,
   "cold": {
-   "time": 0.4450042000353843,
+   "time": 0.43325439993996023,
    "iterations": 5713,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 9.104723200027365,
-   "crossover_time": 0.08730579999973997,
-   "iterations": 922,
+   "gpu_time": 3.6151468999451026,
+   "crossover_time": 0.09744689997751266,
+   "iterations": 1296,
    "status": "optimal",
-   "err": 5.89609344676058e-16,
+   "err": 0.0,
    "viol": 5.1491572098926e-16
   },
   "ipm_x": {
-   "time": 0.7663315999670886,
+   "time": 0.7326878000749275,
    "iterations": 47,
-   "crossover_time": 0.062084499979391694,
+   "crossover_time": 0.0593349999981001,
    "status": "optimal",
    "err": 1.1792186893521158e-16,
    "viol": 5.1491572098926e-16
@@ -120,22 +120,22 @@
   "m": 2171,
   "n": 5167,
   "cold": {
-   "time": 0.8639714999835052,
+   "time": 0.8629103999888599,
    "iterations": 5997,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 16.099264100019354,
-   "crossover_time": 2.060437300009653,
-   "iterations": 5997,
+   "gpu_time": 7.038871999946423,
+   "crossover_time": 0.1984461999963969,
+   "iterations": 1149,
    "status": "optimal",
-   "err": 0.0,
-   "viol": 1.5640181978959895e-14
+   "err": 4.740647069154002e-16,
+   "viol": 1.1639205193644573e-14
   },
   "ipm_x": {
-   "time": 4.755714999977499,
+   "time": 4.118653699988499,
    "iterations": 49,
-   "crossover_time": 0.14287540002260357,
+   "crossover_time": 0.1046175000956282,
    "status": "optimal",
    "err": 2.370323534577001e-16,
    "viol": 3.382644009402954e-14
@@ -146,22 +146,22 @@
   "m": 1503,
   "n": 1818,
   "cold": {
-   "time": 0.26177279998885095,
+   "time": 0.261335700040856,
    "iterations": 3230,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 2.970323899993673,
-   "crossover_time": 0.10824019997380674,
-   "iterations": 1675,
+   "gpu_time": 1.0049614000599831,
+   "crossover_time": 0.10439540003426373,
+   "iterations": 1846,
    "status": "optimal",
    "err": 0.0,
-   "viol": 1.1102230246251565e-15
+   "viol": 1.7763568394002505e-15
   },
   "ipm_x": {
-   "time": 1.211496600008104,
+   "time": 1.1346885000821203,
    "iterations": 18,
-   "crossover_time": 0.12359019997529685,
+   "crossover_time": 0.1081844000145793,
    "status": "optimal",
    "err": 1.1514993276735805e-16,
    "viol": 1.7763568394002505e-15
@@ -172,21 +172,21 @@
   "m": 3000,
   "n": 13525,
   "cold": {
-   "time": 1.4551673000246146,
+   "time": 1.2921615000549256,
    "iterations": 7635,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 3.1555879999650642,
-   "crossover_time": 0.09681019996060058,
-   "iterations": 33,
+   "gpu_time": 2.001146800001152,
+   "crossover_time": 0.09124639991205186,
+   "iterations": 9,
    "status": "optimal",
-   "err": 4.250950248157403e-16,
+   "err": 2.1254751240787014e-16,
    "viol": 1.3975026148938663e-16
   },
   "ipm_x": {
-   "time": 303.2803960000165,
-   "iterations": 6,
+   "time": 322.9223855000455,
+   "iterations": 7,
    "crossover_time": 0.0,
    "status": "time_limit",
    "err": 30.395773963917563,
@@ -198,22 +198,22 @@
   "m": 3136,
   "n": 9408,
   "cold": {
-   "time": 0.6937712000258602,
+   "time": 0.6674282000486568,
    "iterations": 2468,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 0.47748920001322404,
-   "crossover_time": 0.21931090002181008,
-   "iterations": 43,
+   "gpu_time": 0.1702108000172302,
+   "crossover_time": 6.803353399969637,
+   "iterations": 2468,
    "status": "optimal",
    "err": 0.0,
-   "viol": 1.5787083683230936e-13
+   "viol": 8.663784735918372e-14
   },
   "ipm_x": {
-   "time": 10.267156000016257,
+   "time": 9.700547599932179,
    "iterations": 18,
-   "crossover_time": 0.1976344999857247,
+   "crossover_time": 0.18897489993833005,
    "status": "optimal",
    "err": 1.5551225651088187e-16,
    "viol": 1.980624585350323e-14
@@ -224,22 +224,22 @@
   "m": 1441,
   "n": 3652,
   "cold": {
-   "time": 0.9154092000023268,
+   "time": 0.9034469998869121,
    "iterations": 5952,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 80.73091579996981,
-   "crossover_time": 2.020442200009711,
+   "gpu_time": 208.64322850003373,
+   "crossover_time": 1.9087485000491142,
    "iterations": 5952,
    "status": "optimal",
    "err": 0.0,
    "viol": 2.764734690884576e-15
   },
   "ipm_x": {
-   "time": 7.703984799969476,
+   "time": 7.1421442000428215,
    "iterations": 35,
-   "crossover_time": 1.9892607999499887,
+   "crossover_time": 1.8941023000515997,
    "status": "optimal",
    "err": 0.0,
    "viol": 2.764734690884576e-15
@@ -250,22 +250,22 @@
   "m": 2392,
   "n": 5405,
   "cold": {
-   "time": 0.3608010999873914,
+   "time": 0.34746439994880857,
    "iterations": 4015,
    "status": "optimal"
   },
   "gpu_x": {
-   "gpu_time": 300.00765270000556,
-   "crossover_time": 0.11056379997171462,
-   "iterations": 1057,
+   "gpu_time": 300.001415799954,
+   "crossover_time": 0.07481090002693236,
+   "iterations": 845,
    "status": "optimal",
-   "err": 6.161302556851698e-16,
-   "viol": 6.13803763371834e-08
+   "err": 2.053767518950566e-16,
+   "viol": 6.137838681752328e-08
   },
   "ipm_x": {
-   "time": 1.1212672999827191,
+   "time": 1.0256767999380827,
    "iterations": 66,
-   "crossover_time": 0.12762019998626783,
+   "crossover_time": 0.12128089996986091,
    "status": "optimal",
    "err": 6.161302556851698e-16,
    "viol": 6.137827313068556e-08

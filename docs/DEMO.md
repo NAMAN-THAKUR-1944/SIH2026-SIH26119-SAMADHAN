@@ -23,7 +23,7 @@ GPU, then exact vertices, then the MRPL-shaped MILPs, then the one-line integrat
 | 2 | A 1.16 M-variable refinery planning LP on the GPU | `python -m samadhan demo --size XL` | optimal at 1e-4; HiGHS needs minutes (README table) |
 | 3 | An exact optimal vertex from the GPU answer (crossover) | `python -m samadhan demo --size M --crossover` | GPU engine 1–2 s, crossover about 3 s; a cold-start simplex needs 53 s |
 | 4 | Refinery planning MILP: crude cargoes, crude units on or off | `python -m samadhan demo --model plan --size S` | proved optimal in about 2 s (HiGHS about 6 s) |
-| 5 | Crude oil scheduling at the marine terminal | `python -m samadhan demo --model crude --size S --time-limit 20` | a schedule in 20 s; say honestly that HiGHS finds cheaper ones here |
+| 5 | Crude oil scheduling at the marine terminal | `python -m samadhan demo --model crude --size S --time-limit 20` | a schedule in 20 s; say honestly that HiGHS's are still somewhat cheaper here |
 | 6 | A MIPLIB model HiGHS does not finish in 60 s | `python -m samadhan solve data/miplib3/nw04.gz` | 87,482 binaries, proved optimal in about 2.5 s |
 | 7 | An existing PuLP model, one line changed | `python -m examples.pulp_crude_selection` | the same optimum as HiGHS, margin 10,220 k$ |
 
@@ -34,7 +34,7 @@ GPU, then exact vertices, then the MRPL-shaped MILPs, then the one-line integrat
 2. "First-order PDHG on the GPU, with our own CUDA kernels; the answer is certified by its KKT error."
 3. "When an exact vertex is needed, the C++ simplex finishes from the GPU solution."
 4. and 5. "Built the way a coastal refinery plans and schedules. Planning: faster than HiGHS. Scheduling:
-   HiGHS is still better; that is our next work item."
+   our presolve now reaches HiGHS's bound, but HiGHS's schedules are still cheaper on most instances."
 6. "Branch-and-cut, presolve with probing, cuts and heuristics, all written from scratch in C++17."
 7. "Nothing to rewrite: existing PuLP or Pyomo models switch solver with one line."
 

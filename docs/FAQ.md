@@ -27,12 +27,13 @@ shown in the README. We do not claim parity with them on MILP.
 ### Where is SAMADHAN faster than HiGHS, and where slower?
 
 Faster: large LPs on the GPU (the 1.16 M-variable refinery planning LP), large convex QPs (from 110k variables HiGHS
-does not finish in 600 s), the small refinery-planning MILP, and 19 MIPLIB 3 models, including three (nw04, pk1,
-qiu) that HiGHS does not finish in 60 s.
+does not finish in 600 s), the small refinery-planning MILP, and 19 MIPLIB 3 models, plus four (nw04, pk1, qiu,
+mas76) that HiGHS does not finish in 60 s.
 
-Slower: small LPs (HiGHS's simplex median is lower), MILP in general (MIPLIB 3: 43 proved against HiGHS's 50;
-MIPLIB 2017: 5 against 18), and the medium and large crude-scheduling MILPs, where HiGHS finds much cheaper
-schedules. The README lists all of it under [Honest limitations](../README.md#honest-limitations).
+Slower: small LPs (HiGHS's simplex median is lower), MILP in general (MIPLIB 3: 44 proved against HiGHS's 50;
+MIPLIB 2017: 5 against 18), and the crude-scheduling MILP, where HiGHS still finds cheaper schedules on most
+instances (on one medium instance 113× cheaper). The README lists all of it under
+[Honest limitations](../README.md#honest-limitations).
 
 ### A first-order method on the GPU: how accurate are its answers?
 
@@ -67,7 +68,7 @@ platform would be work, but bounded work. The C++ core is self-contained C++17 w
 * `python -m samadhan verify` solves LP, QP and MILP models with every engine, compares each answer with HiGHS
   or a hand-worked optimum, and recomputes feasibility from the returned solution vector instead of trusting the
   solver's report.
-* The test suite (69 tests) runs in CI on Ubuntu and Windows on every push.
+* The test suite (71 tests) runs in CI on Ubuntu and Windows on every push.
 * Every benchmark answer is compared with HiGHS; every "proved optimal" MILP result matches the known optimum,
   and every MILP solution is checked against the model's original rows.
 

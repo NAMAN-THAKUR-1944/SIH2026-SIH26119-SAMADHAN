@@ -43,10 +43,10 @@ below, and are stored in [`results/`](results).
 
 | | What | Result |
 |---|---|---|
-| **LP** | Refinery planning LP, 1.16 M variables | **5.1× faster** than HiGHS at 1e-6 (cost within 0.0002 %), **22×** at 1e-4 |
+| **LP** | Refinery planning LP, 1.16 M variables | **6.0× faster** than HiGHS at 1e-6 (cost within 0.0001 %), **35×** at 1e-4 |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
-| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **43 proved optimal**, all correct, and a feasible solution on 63; 3 of them HiGHS could not finish (nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
-| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 37; HiGHS proves 18 and finds a solution on all 50; on 5 models SAMADHAN's solution is the better one |
+| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **44 proved optimal**, all correct, and a feasible solution on 63; 4 of them HiGHS could not finish (mas76, nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
+| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 38; HiGHS proves 18 and finds a solution on all 50; on 7 models SAMADHAN's solution is the better one |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
@@ -106,9 +106,10 @@ docker build --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu128 -t s
 docker run --rm --gpus all samadhan:gpu demo --size XL --tol 1e-6
 ```
 
-On the RTX 5050 laptop this takes 73.7 s inside Docker and 65.5 s natively (the same 1.2 ms per iteration; the
-Docker run needed more iterations), against 323 s for HiGHS. `docker run --rm --gpus all samadhan:gpu` runs the
-self-check on the GPU, and the full test suite passes in the GPU image.
+On the RTX 5050 laptop this took 73.7 s inside Docker and 65.5 s natively when the image was last built, before
+the engine had its own CUDA kernels (natively it now takes 54 s), against 323 s for HiGHS.
+`docker run --rm --gpus all samadhan:gpu` runs the self-check on the GPU, and the full test suite passes in the GPU
+image.
 
 In Windows PowerShell write `${PWD}` instead of `$PWD`. Every number in this README has its raw data in
 [`results/`](results) and the command that produced it under [Reproduce every number](#reproduce-every-number).
@@ -137,10 +138,22 @@ the faster of its dual simplex and interior point; SAMADHAN with the faster of i
 
 | Model | Variables | Nonzeros | HiGHS (best) | SAMADHAN accurate (1e-6) | SAMADHAN fast (1e-4) |
 |---|---:|---:|---:|---:|---:|
-| S  | 13,296    | 25,416    | 0.24 s | 2.2 s (0.1×)  | 0.7 s (0.3×) |
-| M  | 109,536   | 214,092   | 8.5 s  | 12.6 s (0.7×) | 1.8 s (4.8×) |
-| L  | 406,080   | 796,512   | 63.9 s | 30.7 s (2.1×) | 5.3 s (12×) |
-| XL | 1,157,120 | 2,273,888 | 323 s  | 63.7 s (5.1×) | 15.0 s (22×) |
+| S | 13,296 | 25,416 | 0.24 s | 0.85 s (0.3×) | 0.32 s (0.7×) |
+| M | 109,536 | 214,092 | 8.5 s | 6.3 s (1.4×) | 0.90 s (9.5×) |
+| L | 406,080 | 796,512 | 63.9 s | 15.5 s (4.1×) | 3.3 s (19×) |
+| XL | 1,157,120 | 2,273,888 | 323 s | 54.0 s (6.0×) | 9.3 s (35×) |
+
+The GPU engine's iteration runs on its own fused CUDA kernels ([How it works](#how-it-works)). Timed in the same
+run, the same iterations written with PyTorch operations show what the kernels bring: most where an iteration is
+short and twenty small operations dominate it, least on XL, where an iteration is bound by memory bandwidth (the
+kernels move data at about 270 GB/s, close to what this laptop GPU can do):
+
+| Model | 1e-6, adaptive: PyTorch → native kernels | 1e-4, best method: PyTorch → native kernels |
+|---|---:|---:|
+| S | 8.7 s → 3.6 s (2.4×) | 0.79 s → 0.32 s (2.4×) |
+| M | 22.9 s → 11.0 s (2.1×) | 1.7 s → 0.90 s (1.9×) |
+| L | 24.1 s → 15.5 s (1.6×) | 5.2 s → 3.3 s (1.6×) |
+| XL | 72.4 s → 54.0 s (1.3×) | 11.3 s → 9.3 s (1.2×) |
 
 **Netlib** (91 classic LPs, up to 6,071 rows, one thread, 60 s):
 
@@ -159,39 +172,43 @@ factorisation. The Forrest–Tomlin update cut the total time for all 91 from 29
 ### LP — exact vertices from the GPU engine (crossover)
 
 Crossover turns the GPU engine's 1e-4 solution into an exact optimal vertex; every result below equals the
-cold-start simplex optimum to 2e-15. It now beats the cold start on 9 of the 11 models, among them all three
-refinery models (L: 37 s against 758 s, 20×; M: 2.64 s against 53 s), and is slower on d2q06c and pilot. Two changes
+cold-start simplex optimum to 3e-15. It beats the cold start on 9 of the 11 models, among them all three
+refinery models (L: 36 s against 673 s, 19×; M: 3.2 s against 52 s), and is slower on maros-r7 and pilot. Two changes
 made the difference. A point inside a degenerate optimal face has more columns strictly inside their bounds than
 there are rows (refinery-L: 41,195 against 31,536); they used to be put at a bound, now they are pushed there one by
 one with a ratio test. And the crash basis used to come from the primal point alone and was far from dual feasible,
 so the dual simplex on shifted costs re-solved the LP; now basic variables outside their bounds get the bound
 relaxed to their value, the primal simplex finishes the relaxed LP, and the GPU duals guide the crash. Before,
-refinery-L took between 583 s and more than 30 minutes depending on the GPU point. On pilot and greenbea the GPU
-engine stopped at its time limit short of 1e-4; crossover still finished exactly from that point:
+refinery-L took between 583 s and more than 30 minutes depending on the GPU point. The GPU point still matters on
+maros-r7: from the point the PyTorch version of the engine reaches, crossover needs 43 iterations (0.2 s); from the
+one the native kernels reach, which differs only by rounding, the primal simplex breaks down numerically (its
+objective climbs instead of falling) and crossover falls back to a cold start. On greenbea the GPU engine
+stopped at its time limit short of 1e-4; crossover still finished exactly from that point:
 
 | Model | Variables | Cold simplex | GPU engine (1e-4) | then crossover | Crossover vs cold |
 |---|---:|---:|---:|---:|---:|
-| refinery-S | 13,296 | 0.77 s | 2.00 s | 0.09 s | **8.8× faster** |
-| refinery-M | 109,536 | 53 s | 3.12 s | 2.64 s | **20.2× faster** |
-| refinery-L | 406,080 | 758 s | 5.55 s | 37 s | **20.4× faster** |
-| 25fv47 | 1,571 | 0.12 s | 3.99 s | 0.02 s | **5.7× faster** |
-| 80bau3b | 9,799 | 0.45 s | 9.10 s | 0.09 s | **5.1× faster** |
-| d2q06c | 5,167 | 0.86 s | 16 s | 2.06 s | 2.4× slower |
-| degen3 | 1,818 | 0.26 s | 2.97 s | 0.11 s | **2.4× faster** |
-| fit2p | 13,525 | 1.46 s | 3.16 s | 0.10 s | **15.0× faster** |
-| maros-r7 | 9,408 | 0.69 s | 0.48 s | 0.22 s | **3.2× faster** |
-| pilot | 3,652 | 0.92 s | 81 s | 2.02 s | 2.2× slower |
-| greenbea | 5,405 | 0.36 s | 300 s | 0.11 s | **3.3× faster** |
+| refinery-S | 13,296 | 0.74 s | 0.99 s | 0.10 s | **7.7× faster** |
+| refinery-M | 109,536 | 51.6 s | 1.5 s | 3.2 s | **16.0× faster** |
+| refinery-L | 406,080 | 673 s | 3.3 s | 36.0 s | **18.7× faster** |
+| 25fv47 | 1,571 | 0.12 s | 1.5 s | 0.02 s | **4.9× faster** |
+| 80bau3b | 9,799 | 0.43 s | 3.6 s | 0.10 s | **4.4× faster** |
+| d2q06c | 5,167 | 0.86 s | 7.0 s | 0.20 s | **4.3× faster** |
+| degen3 | 1,818 | 0.26 s | 1.0 s | 0.10 s | **2.5× faster** |
+| fit2p | 13,525 | 1.3 s | 2.0 s | 0.09 s | **14.2× faster** |
+| maros-r7 | 9,408 | 0.67 s | 0.17 s | 6.8 s | 10.2× slower |
+| pilot | 3,652 | 0.90 s | 209 s | 1.9 s | 2.1× slower |
+| greenbea | 5,405 | 0.35 s | 300 s | 0.07 s | **4.6× faster** |
 
 ### MILP — MIPLIB 3
 
 ![MIPLIB](docs/img/miplib.png)
 
-All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 43
+All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 44
 optimal**, every one matching the known optimum, and finds a feasible solution on **63 of 65**; HiGHS proves 50.
-SAMADHAN finishes **nw04 (87,482 columns), pk1 and qiu** where HiGHS runs out of time, and is faster than HiGHS on
-19 of the models both prove, for example air03 (0.8 s vs 2.8 s), gesa3 (1.0 s vs 3.4 s), cap6000 (0.5 s vs 2.0 s),
-mod008 (0.2 s vs 1.2 s), mitre (1.5 s vs 3.0 s) and rentacar (4.2 s vs 10.4 s).
+SAMADHAN finishes **nw04 (87,482 columns), pk1, qiu and mas76** where HiGHS runs out of time (mas76 only just, in
+59.7 s), and is faster than HiGHS on 19 of the models both prove, for example air03 (0.8 s vs 2.8 s), gesa3
+(1.1 s vs 3.4 s), cap6000 (0.5 s vs 2.0 s), mod008 (0.2 s vs 1.2 s), mitre (1.2 s vs 3.0 s) and rentacar (2.9 s vs
+10.4 s).
 
 How it got here, each step measured on the same models:
 
@@ -205,6 +222,7 @@ How it got here, each step measured on the same models:
 | + probing, parallel rows, doubleton equations | 65 | 42 | 62 | 15.5 s |
 | + fix-and-propagate heuristic | 65 | 42 | 63 | 15.8 s |
 | + RINS improvement heuristic | 65 | 43 | 63 | 15.8 s |
+| + propagation through continuous columns in presolve | 65 | 44 | 63 | 15.3 s |
 
 The Forrest–Tomlin update targets large LPs; on these small MILPs it is neutral (the counts are unchanged, single
 models move both ways as the search takes another path: l152lav 34 s → 8 s, misc07 17 s → 49 s). Since that change,
@@ -217,7 +235,11 @@ proves modglob (51 s) and improves the incumbent on 8 of the models that stay un
 3,193; optimum 3,124), rout (1,193 → 1,082; HiGHS 1,078), mkc (−502 → −526) and set1ch (54,779 → 54,567); it ends
 worse on 4 (mas74, mod011, seymour, swath), and on models that are nearly proved it can cost a few seconds (gesa2_o
 9.9 s → 12.9 s). Before it became a default it was compared with the previous defaults back to back on all 65
-models: 43 against 42 proved, 63 solutions with both, shifted geo-mean 15.8 s against 15.4 s.
+models: 43 against 42 proved, 63 solutions with both, shifted geo-mean 15.8 s against 15.4 s. The propagation
+through continuous columns (written for the crude scheduling model below) changes little here: mas76 is now proved
+(59.7 s), the incumbent improves on six models that stay unproved (fixnet6 5,875 → 5,405, swath 646 → 553, mod011,
+mkc, p2756, rout) and gets worse on two (air05, harp2). The shifted geo-mean fell from 15.8 s to 15.3 s, partly
+because the laptop ran faster in this round: models whose search did not change took 0.88× their earlier time.
 
 The branch-and-cut work finds the first feasible solutions on 10teams, fixnet6, harp2, mkc, p2756 and set1ch,
 newly proves 10teams, pp08a and pp08aCUTS, and cuts solve times sharply on many models (gesa2 21 s → 0.9 s, vpm1
@@ -231,12 +253,13 @@ made things slower on average and are off by default.
 **MIPLIB 2017** (50 models of the current benchmark set, 60 s, one thread, gap 1e-4) is much harder, and here HiGHS
 is clearly ahead: it proves **18** optimal and finds a solution on all 50; SAMADHAN proves **5** (markshare_4_0,
 neos8, nw04, pk1, swath1, all correct; markshare_4_0, nw04 and pk1 are not proved by HiGHS in 60 s) and finds a
-solution on 37. On 5 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-957323, pk1,
-rmatr100-p10). RINS improves the incumbent on 14 of the 50 models and ends worse on 7, for example neos-860300
+solution on 38. On 7 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-662469, neos-957323,
+pg5_34, pk1, rmatr100-p10). RINS improves the incumbent on 14 of the 50 models and ends worse on 7, for example neos-860300
 (5,419 → 4,342), timtab1 (1.07 M → 0.99 M) and p200x1188c (18,832 → 15,078, equal to HiGHS); swath3, where
 SAMADHAN was ahead, is now 0.4 % behind. Presolve, the gap measured on this set, now probes binaries, merges
 parallel rows and substitutes doubleton equations: it matches HiGHS's presolve on 30n20b8 (491 × 4,748 against
-488 × 4,733) and graph20-20-1rand, beats it on air05 (343 × 6,119 against 342 × 6,146) and comes close on neos-860300 and nu25-pr12.
+488 × 4,733) and graph20-20-1rand, beats it on air05 (343 × 6,119 against 342 × 6,146) and comes close on
+neos-860300 and nu25-pr12.
 ex9 is still out of reach: its rows are implications x_j ≤ Σ x_k between binaries, which HiGHS's presolve removes
 completely by enumerating combinations of short rows; ours keeps 33,766 × 8,560 and its LP relaxation does not
 finish in 900 s (HiGHS 12 s). Running this set also found two bugs that are now fixed: integer columns without any
@@ -261,39 +284,52 @@ Two models built the way a coastal refinery like MRPL plans and schedules (`sama
 |---|---|---:|---:|---:|---|---|
 | Crude scheduling | S | 1,941 (882) | 0 / 3 of 3 | 1 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Crude scheduling | M | 5,385 (2,400) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
-| Crude scheduling | L | 14,262 (6,552) | 0 / 2 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
-| Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.0 s vs 5.8 s (median) |
+| Crude scheduling | L | 14,262 (6,552) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
+| Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.1 s vs 5.8 s (median) |
 | Refinery planning | M | 13,824 (144) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Refinery planning | L | 35,976 (192) | 0 / 2 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
 
 On the small planning model SAMADHAN proves the optimum faster than HiGHS on all three instances. On the larger
 planning models neither solver proves optimality in 60 s. SAMADHAN finds a plan on five of the six: three are within
-0.5 % of HiGHS's and one large instance is slightly better. The fifth (M, seed 9) stayed at its first plan in this
-run, 4 % above HiGHS's; the heuristics' budgets are time-based, and with six models solved in parallel fewer nodes fit
-into the minute (run alone it reaches 0.35 %). On one large instance it finds no plan within the minute.
+0.4 % of HiGHS's and one large instance is slightly better; the fifth (M, seed 7) ends 5.8 % above HiGHS's in this
+round (0.45 % in the previous one: the heuristics' budgets are time-based, so results within the minute move
+between runs). On one large instance it finds no plan within the minute.
 
-The crude scheduling model is where HiGHS is clearly stronger: its LP relaxation is weak (a bound near zero against
-schedules costing thousands). Getting first solutions at all needed a new heuristic: **fix-and-propagate** fixes the
+The crude scheduling model is where HiGHS was clearly stronger, and the reason turned out to be the bound more than
+the search. Its LP relaxation is weak (8.75 on medium seed 7, against schedules costing tens of thousands), yet
+HiGHS's root bound on that instance is 15,349, before any cut: its domain propagation deduces that a tank holding
+more than its heel cannot change crude class in the next period, so its class binary is 1, period after period;
+that fixes 2,304 columns and makes the starvation of crude units that cannot take a tank's class unavoidable in
+the LP as well. Our presolve tightened bounds only on integer columns, so the chain never started. It now keeps
+implied bounds for continuous columns (used only by this propagation, never to declare a row redundant) and sweeps
+until nothing changes: on that instance it fixes the same 2,304 columns and reaches the same bound, 15,348. HiGHS
+solving with gap 0 gives the same optimum before and after our presolve on all 42 small MIPLIB 3 models and on 11
+crude and planning instances.
+
+The search uses two heuristics written for this model. **Fix-and-propagate** finds first schedules: it fixes the
 integer columns one by one with domain propagation over all bounds, tries the other side on a conflict, and
-completes the point with one LP, once in the order of the rounded LP point and once taking the strongest LP
-decisions first; while there is no incumbent on a model with expensive LPs it may use up to a quarter of the time.
-Better schedules then come from **RINS** (relaxation-induced neighbourhood search, Danna, Rothberg & Le Pape): the
-integer columns on which the incumbent and the current LP solution agree are fixed, and the rest is solved as a
-small MILP by a nested branch-and-bound, warm-started from the parent's basis, with the incumbent as cutoff. It runs
-at the root and in the tree while the gap exceeds 1 %, waiting twice as long after each call that found nothing.
-On the small crude instances it brings the schedule cost from 15,298 to 4,450 and from 45,814 to 1,585 (HiGHS:
-4,095 and 115); the third instance ends at 675 instead of 555 (HiGHS 275). On the medium instances its sub-MIPs are
-still too hard to help within a minute (HiGHS's schedules cost 2,640–31,465, ours 0.38–0.78 M). On the large
-instances SAMADHAN at first found no schedule at all, because on two of them the root LP did not finish: integer
-columns are not scaled (so that integrality is unchanged), and with this model's big-M coefficients (up to 499)
-that cost the dual simplex 12 (m + n) iterations instead of 0.9 (m + n) fully scaled, more than 120 s. A root LP
-that has taken 1.5 (m + n) iterations now continues on a copy of the model with every column scaled, from the
-basis where it stopped, and hands the optimal basis back (scaling does not change which columns are basic). Now
-SAMADHAN finds a schedule on two of the three large instances, one of them cheaper than HiGHS's (374,541 against
-647,923; the other 910,373 against 884,317). Every MIPLIB 3 root LP, and every other MRPL-shaped one, needs at
-most 1.3 (m + n) iterations and keeps exactly its path; on MIPLIB 2017 the switch decides neos-957323 (now a
-solution better than HiGHS's) and neos-662469 (whose solution is lost: the longer root leaves its heuristics
-less time).
+completes the point with one LP. **RINS** (relaxation-induced neighbourhood search, Danna, Rothberg & Le Pape)
+improves them: the integer columns on which the incumbent and the current LP solution agree are fixed, and the
+rest is solved as a small MILP by a nested branch-and-bound, warm-started from the parent's basis, with the
+incumbent as cutoff, while the gap exceeds 1 %. With the stronger bound RINS now works on the medium instances too.
+The schedule costs in this round, with HiGHS's in brackets:
+
+| Crude scheduling | Seed 7 | Seed 8 | Seed 9 | Before the propagation |
+|---|---:|---:|---:|---|
+| S | 4,195 (4,095, optimal) | 225 (115) | 420 (275) | 4,450 / 1,585 / 675 |
+| M | 29,299 (17,905) | 27,545 (9,722) | 92,404 (815) | 0.38 M / 0.62 M / 0.78 M |
+| L | 889,836 (647,923) | **830,736** (884,317) | 872,225 (738,807) | 374,541 / 910,373 / none |
+
+HiGHS is still ahead on eight of the nine, far ahead on medium seed 9, where our bound stays weak (about 9, as on
+medium seed 8 and all large instances). On the large instances SAMADHAN at first found no schedule at all, because
+the root LP did not finish: integer columns are not scaled (so that integrality is unchanged), and with this
+model's big-M coefficients (up to 499) that cost the dual simplex 12 (m + n) iterations instead of 0.9 (m + n) fully
+scaled. A root LP that has taken 1.5 (m + n) iterations now continues on a copy of the model with every column
+scaled, from the basis where it stopped, and hands the optimal basis back (scaling does not change which columns
+are basic); every MIPLIB 3 root LP and every other MRPL-shaped one needs at most 1.3 (m + n) iterations and keeps
+exactly its path. All three large instances now get a schedule, one cheaper than HiGHS's; seed 7 ended at 374,541
+in the previous round and at 889,836 in this one, a reminder that results within a minute move with the timing of
+the heuristics.
 
 ### QP — Maros–Meszaros and refinery QP
 
@@ -323,14 +359,15 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
 * On small LPs HiGHS's simplex is still a little faster than ours (Netlib median 0.008 s against
   0.013 s, part of it Python-side presolve); the GPU engine pays off from roughly 100k variables.
 * The GPU engine reaches 1e-4…1e-6 relative accuracy. Crossover turns its solution into an exact vertex and beats a
-  cold start on 9 of 11 test models, but it is still slower on d2q06c and pilot, and the 1.16 M-variable refinery LP
+  cold start on 9 of 11 test models, but it is still slower on maros-r7 and pilot (from some GPU points the primal
+  simplex breaks down numerically and a cold start takes over), and the 1.16 M-variable refinery LP
   has not been crossed over yet (roadmap).
 * The interior-point method factorises A Θ Aᵀ directly: models with dense columns (fit2p) are slow, as there is
   no dense-column splitting yet.
-* On the crude scheduling MILP (MRPL marine terminal) HiGHS mostly finds cheaper schedules within 60 s: with RINS
-  the gap is down to 1.1–14× on the small instances, but on the medium ones HiGHS's schedules are 12–290× cheaper,
-  and on the large ones SAMADHAN finds a schedule on two of three (one cheaper than HiGHS's). There is no local
-  branching yet, and RINS sub-MIPs on the larger instances are too hard to help within a minute.
+* On the crude scheduling MILP (MRPL marine terminal) HiGHS still finds cheaper schedules within 60 s on eight of
+  nine instances: 1.0–2× cheaper on the small ones, 1.6–2.8× on two medium ones and 113× on the third, whose LP
+  bound stays weak after our presolve; on the large ones SAMADHAN's schedules are within 1.4× of HiGHS's and one
+  is cheaper. There is no local branching yet.
 * Presolve has the standard primal reductions, dual fixing, parallel rows, doubleton substitution and probing,
   but no clique table or enumeration of small rows yet (HiGHS's presolve removes all of ex9 that way), and no
   dominated or duplicate columns or coefficient strengthening. The branch-and-cut root bound is still weaker than
@@ -344,7 +381,7 @@ python -m venv .venv
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128   # or /whl/cpu
 .venv/Scripts/pip install -r requirements.txt
 .venv/Scripts/python -m samadhan verify                         # self-check of every engine, ~10 s
-.venv/Scripts/python -m pytest                                  # 70 correctness tests, ~45 s
+.venv/Scripts/python -m pytest                                  # 71 correctness tests, ~45 s
 .venv/Scripts/python -m samadhan demo --size XL --tol 1e-6      # 1.16M-variable refinery LP on the GPU
 .venv/Scripts/python -m samadhan solve model.mps                # engine picked from the model
 .venv/Scripts/python -m samadhan solve model.mps --engine core  # force the C++ dual simplex / branch-and-cut
