@@ -1,6 +1,7 @@
 """Command line:
     python -m samadhan solve model.mps [--engine auto|gpu|core|ipm] [--device cuda|cpu] [--tol 1e-6]
     python -m samadhan demo [--size S|M|L|XL]      (generated refinery planning LP on the GPU engine)
+    python -m samadhan demo --model plan|crude [--size S|M|L]   (MRPL-shaped MILPs on the C++ core, 60 s)
     python -m samadhan verify                      (self-check: every engine against HiGHS or a hand-worked optimum)
 
 --engine auto (default) picks the engine from the model: integer variables -> C++ branch-and-cut; an LP with at
@@ -53,7 +54,7 @@ def _ipm(lp, a):
 
 def _core(lp, a):
     from .core import solve_core
-    r = solve_core(lp, time_limit=a.time_limit, verbose=not a.quiet)
+    r = solve_core(lp, time_limit=a.time_limit, verbose=not a.quiet, **({} if a.gap is None else dict(gap=a.gap)))
     print(f"\nstatus      {r.status}\nobjective   {lp.sense * r.obj:.10g}\nbound       {lp.sense * r.bound:.10g}\n"
           f"gap         {r.gap:.2e}   nodes {r.nodes}   simplex iterations {r.lp_iters}   cuts {r.cuts}\n"
           f"time        {r.time:.2f} s (C++ core)")
@@ -67,8 +68,12 @@ def main(argv=None):
     s.add_argument("file")
     s.add_argument("--engine", default="auto", choices=["auto", "gpu", "core", "ipm"],
                    help=f"auto: C++ core for MILPs and for LPs up to {GPU_FROM:,} variables, GPU engine otherwise")
-    d = sub.add_parser("demo", help="solve a generated refinery planning LP")
-    d.add_argument("--size", default="S", choices=["S", "M", "L", "XL"])
+    d = sub.add_parser("demo", help="solve a generated refinery model (MRPL-shaped)")
+    d.add_argument("--model", default="lp", choices=["lp", "plan", "crude"],
+                   help="lp: refinery planning LP (GPU engine); plan: refinery planning MILP with crude cargoes and "
+                        "unit modes; crude: crude oil scheduling at the marine terminal (both MILPs: C++ core)")
+    d.add_argument("--size", default="S", choices=["S", "M", "L", "XL"], help="XL: LP only")
+    d.add_argument("--seed", type=int, default=None, help="instance seed (default: the one of the benchmarks)")
     v = sub.add_parser("verify", help="self-check: solve small LP, QP and MILP models with both engines and "
                                       "compare every answer with HiGHS or an optimum worked out by hand")
     v.add_argument("--device", default="cuda", choices=["cuda", "cpu"], help="GPU engine device")
@@ -79,7 +84,9 @@ def main(argv=None):
                        help="GPU engine: adaptive-step PDLP, or constant-step PDLP replayed as CUDA graphs")
         p.add_argument("--no-native", action="store_true",
                        help="GPU engine: PyTorch operations instead of the fused native CUDA kernels")
-        p.add_argument("--time-limit", type=float, default=600.0)
+        p.add_argument("--time-limit", type=float, default=None, help="seconds (default 600; MILP demos 60)")
+        p.add_argument("--gap", type=float, default=None,
+                       help="C++ core, MILP: relative gap (default 1e-6; MILP demos and the benchmarks use 1e-4)")
         p.add_argument("--quiet", action="store_true")
         p.add_argument("--crossover", action="store_true",
                        help="GPU engine, LP: turn the first-order solution into an exact optimal vertex (C++ simplex)")
@@ -95,9 +102,23 @@ def main(argv=None):
         if engine == "auto":
             engine = pick_engine(lp)
     else:
-        from .generate import BENCH_SEED, REFINERY_SIZES, refinery_lp
-        lp = refinery_lp(seed=BENCH_SEED, **REFINERY_SIZES[a.size])
-        engine = "gpu"
+        from .generate import BENCH_SEED, PLAN_SIZES, REFINERY_SIZES, refinery_lp, refinery_plan
+        seed = BENCH_SEED if a.seed is None else a.seed
+        if a.model == "lp":
+            lp, engine = refinery_lp(seed=seed, **REFINERY_SIZES[a.size]), "gpu"
+        else:
+            if a.size == "XL":
+                ap.error("--size XL exists for --model lp only")
+            from .crude import CRUDE_SIZES, crude_schedule
+            if a.model == "plan":
+                lp = refinery_plan(seed=seed, **PLAN_SIZES[a.size])
+            else:
+                lp = crude_schedule(seed=seed, **CRUDE_SIZES[a.size])
+            engine = "core"
+            a.time_limit = 60.0 if a.time_limit is None else a.time_limit
+            a.gap = 1e-4 if a.gap is None else a.gap
+    if a.time_limit is None:
+        a.time_limit = 600.0
     name = {"core": "C++ core", "ipm": "interior point + crossover", "gpu": "GPU engine"}[engine]
     print(lp.summary(), f"-> {name}")
     ok = {"core": _core, "ipm": _ipm, "gpu": _gpu}[engine](lp, a)

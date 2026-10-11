@@ -572,6 +572,17 @@ def test_cli_lp_on_cpu(capsys):
     assert "GPU engine" in capsys.readouterr().out
 
 
+def test_cli_demo_milp_models(capsys):
+    from samadhan.__main__ import main
+    assert main(["demo", "--model", "plan", "--size", "S", "--quiet"]) == 0
+    out = capsys.readouterr().out
+    assert "C++ core" in out and "optimal" in out
+    main(["demo", "--model", "crude", "--size", "S", "--time-limit", "2", "--quiet"])
+    assert "crude" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        main(["demo", "--model", "crude", "--size", "XL"])
+
+
 def test_cli_auto_engine():
     """auto: MILP and small LP -> C++ core, large LP and QP -> GPU engine."""
     import dataclasses

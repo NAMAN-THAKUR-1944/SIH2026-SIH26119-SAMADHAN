@@ -94,6 +94,8 @@ Then try:
 |---|---|
 | Your own model (the engine is picked from the model) | `docker run --rm -v "$PWD:/models" samadhan solve /models/model.mps` |
 | A 110k-variable refinery planning LP (about 10 s on a CPU) | `docker run --rm samadhan demo --size M --device cpu` |
+| Refinery planning with crude cargoes and unit modes (MILP, proved optimal in seconds) | `docker run --rm samadhan demo --model plan --size S` |
+| Crude oil scheduling at the marine terminal (MILP, 60 s) | `docker run --rm samadhan demo --model crude --size S` |
 | The full test suite | `docker run --rm --entrypoint python samadhan -m pytest -q` |
 
 **On an NVIDIA GPU** (Windows: Docker Desktop with the WSL 2 engine; Linux: the NVIDIA Container Toolkit), build
