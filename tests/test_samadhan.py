@@ -393,6 +393,30 @@ def test_presolve_probing():
     assert P.stats["probe_fixed"] + P.stats["probe_tightened"] >= 1 and P.x_fixed[0] == 0.0
 
 
+def test_presolve_propagates_along_continuous_chains():
+    """An inventory starts at 10 and loses at most 3 per period, so after three periods it still holds at least 1;
+    the binary that must be 1 whenever it holds anything is fixed at 1 by presolve. The deduction needs implied
+    bounds of the continuous inventories, one period per propagation sweep."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    from samadhan.lp import LP
+    from samadhan.presolve import presolve
+    inf = np.inf
+    K = sp.csr_matrix(np.array([[-1.0, 1, 0, 0, 0, -1, 0, 0],    # x1 >= x0 - out1  (columns x0..x3, y, out1..out3)
+                                [0.0, -1, 1, 0, 0, 0, -1, 0],    # x2 >= x1 - out2
+                                [0.0, 0, -1, 1, 0, 0, 0, -1],    # x3 >= x2 - out3
+                                [0.0, 0, 0, -1, 100, 0, 0, 0]]))  # x3 <= 100 y
+    lp = LP(np.array([0.0, 0, 0, 0, 1, -1, -1, -1]), K, np.array([0.0, 0, 0, 0]), 0,
+            np.array([10.0, 0, 0, 0, 0, 0, 0, 0]), np.array([10.0, inf, inf, inf, 1, 3, 3, 3]),
+            integer=np.array([0, 0, 0, 0, 1, 0, 0, 0], bool))
+    P = presolve(lp)
+    kept = list(P.cols)
+    y_lo = P.lp.l[kept.index(4)] if 4 in kept else P.x_fixed[4]
+    assert P.status == "reduced" and y_lo == 1.0
+    assert solve_highs(lp)["obj"] == pytest.approx(-8.0) and solve_highs(P.lp)["obj"] == pytest.approx(-8.0)
+
+
 def test_presolve_free_singleton_and_dual_fixing():
     """min x1 + x2 + 2y  s.t.  x1 + x2 - s = 3 (s in [0, 10], implied free: x in [2, 4] gives s in [1, 5]),
     x2 + y <= 10 (y has no down-lock and cost 2: fixed at 0)  ->  x = (2, 2), s = 1, y = 0, value 4."""

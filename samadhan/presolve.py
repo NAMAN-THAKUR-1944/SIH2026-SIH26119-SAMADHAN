@@ -31,6 +31,7 @@ from .lp import LP
 FEAS_TOL = 1e-9    # feasibility tolerance when rows and bounds are compared
 PROBE_WORK = 6e7   # probing budget: row-entry operations of the propagation (well under a second)
 INT_TOL = 1e-6     # integer rounding tolerance for tightened bounds (relative to the bound)
+PROP_WORK = 5e7    # bound propagation budget per presolve pass, in row entries visited
 
 
 def _floor(v):
@@ -39,6 +40,64 @@ def _floor(v):
 
 def _ceil(v):
     return np.ceil(v - INT_TOL * np.maximum(1.0, np.abs(np.where(np.isfinite(v), v, 0.0))))
+
+
+def _propagate(S, cols, isint, l, u, pl, pu, rlo, rhi, work=PROP_WORK):
+    """Bound propagation over the rows of S (columns cols of the model) until nothing changes. Integer columns get
+    tighter bounds in l, u (the number of tightenings is returned); continuous columns get implied bounds in pl, pu,
+    which only serve this propagation: a bound implied by a row must not make that row look redundant, so the
+    redundancy and forcing tests use l, u alone. With the implied bounds a deduction travels along chains of
+    continuous columns, such as tank inventories from one period to the next."""
+    T = S.tocoo()
+    r_, jl, a = T.row, T.col, T.data
+    if not len(a):
+        return 0
+    j_ = cols[jl]
+    ints = isint[cols]
+    n = len(l)
+    count, sweeps = 0, max(1, int(work // len(a)))
+    for _ in range(min(sweeps, 500)):
+        bl = np.where(ints, l[cols], np.maximum(l[cols], pl[cols]))
+        bu = np.where(ints, u[cols], np.minimum(u[cols], pu[cols]))
+        if np.any(bl > bu + FEAS_TOL * (1.0 + np.abs(np.where(np.isfinite(bl), bl, 0.0)))):
+            break                                       # left to the solver: infeasible, or numerical noise
+        mn, mn_inf, mx, mx_inf = _activity(S, bl, bu)
+        lj, uj = bl[jl], bu[jl]
+        cmin = np.where(a > 0, a * lj, a * uj)
+        cmax = np.where(a > 0, a * uj, a * lj)
+        inf_min, inf_max = ~np.isfinite(cmin), ~np.isfinite(cmax)
+        rest_min = np.where(mn_inf[r_] - inf_min == 0, mn[r_] - np.where(inf_min, 0.0, cmin), -np.inf)
+        rest_max = np.where(mx_inf[r_] - inf_max == 0, mx[r_] - np.where(inf_max, 0.0, cmax), np.inf)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            from_hi = (rhi[r_] - rest_min) / a          # a x_j <= hi - rest_min
+            from_lo = (rlo[r_] - rest_max) / a          # a x_j >= lo - rest_max
+        new_u = np.where(a > 0, from_hi, from_lo)
+        new_l = np.where(a > 0, from_lo, from_hi)
+        new_u = np.where(np.isnan(new_u), np.inf, new_u)
+        new_l = np.where(np.isnan(new_l), -np.inf, new_l)
+        ie = isint[j_]
+        new_u = np.where(ie, _floor(new_u), new_u)
+        new_l = np.where(ie, _ceil(new_l), new_l)
+        cand_u, cand_l = np.full(n, np.inf), np.full(n, -np.inf)
+        np.minimum.at(cand_u, j_, new_u)
+        np.maximum.at(cand_l, j_, new_l)
+        cur_u = np.where(isint, u, np.minimum(u, pu))
+        cur_l = np.where(isint, l, np.maximum(l, pl))
+        # integer bounds move by whole units; continuous ones must improve by 0.1% to count (no endless creeping)
+        ref_u = np.abs(np.where(np.isfinite(cur_u), cur_u, np.where(np.isfinite(cand_u), cand_u, 0.0)))
+        ref_l = np.abs(np.where(np.isfinite(cur_l), cur_l, np.where(np.isfinite(cand_l), cand_l, 0.0)))
+        imp_u = cand_u < cur_u - np.where(isint, 0.5, 1e-3 * np.maximum(1.0, ref_u))
+        imp_l = cand_l > cur_l + np.where(isint, 0.5, 1e-3 * np.maximum(1.0, ref_l))
+        if not (imp_u.any() or imp_l.any()):
+            break
+        iu, il = imp_u & isint, imp_l & isint
+        u[iu] = cand_u[iu]
+        l[il] = cand_l[il]
+        count += int(iu.sum() + il.sum())
+        cu, cl = imp_u & ~isint, imp_l & ~isint
+        pu[cu] = cand_u[cu]
+        pl[cl] = cand_l[cl]
+    return count
 
 
 @dataclass
@@ -123,6 +182,7 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
     l[isint] = _ceil(l[isint])
     u[isint] = _floor(u[isint])
     row_on, col_on = np.ones(m, bool), np.ones(n, bool)
+    pl, pu = l.copy(), u.copy()                     # implied bounds of continuous columns (see _propagate)
     x_fixed = np.zeros(n)
     const = lp.obj_const
     st = dict(passes=0, fixed_cols=0, empty_rows=0, singleton_rows=0, redundant_rows=0, forcing_rows=0,
@@ -202,31 +262,10 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
                 l[jj] = u[jj] = val[first]             # becomes a fixed column in the next pass
             st["forcing_rows"] += int(f_up.sum() + f_dn.sum()); changed = True
             continue
-        # domain propagation on integer columns
+        # domain propagation: integer bounds, helped by implied bounds of the continuous columns
         if isint[cols].any():
-            T = S.tocoo()
-            keep = isint[cols[T.col]]
-            r_, j_, a = T.row[keep], cols[T.col[keep]], T.data[keep]
-            lj, uj = l[j_], u[j_]
-            # contribution of the entry itself to the min / max activity of its row
-            cmin = np.where(a > 0, a * lj, a * uj)
-            cmax = np.where(a > 0, a * uj, a * lj)
-            inf_min, inf_max = ~np.isfinite(cmin), ~np.isfinite(cmax)
-            rest_min = np.where(mn_inf[r_] - inf_min == 0, mn[r_] - np.where(inf_min, 0.0, cmin), -np.inf)
-            rest_max = np.where(mx_inf[r_] - inf_max == 0, mx[r_] - np.where(inf_max, 0.0, cmax), np.inf)
-            with np.errstate(invalid="ignore", divide="ignore"):
-                from_hi = (rhi[r_] - rest_min) / a       # a x_j <= hi - rest_min
-                from_lo = (rlo[r_] - rest_max) / a       # a x_j >= lo - rest_max
-            new_u = np.where(a > 0, from_hi, from_lo)
-            new_l = np.where(a > 0, from_lo, from_hi)
-            new_u = np.where(np.isnan(new_u), np.inf, _floor(new_u))
-            new_l = np.where(np.isnan(new_l), -np.inf, _ceil(new_l))
-            nu, nl = u.copy(), l.copy()
-            np.minimum.at(nu, j_, new_u)
-            np.maximum.at(nl, j_, new_l)
-            k = int(np.sum(nu < u) + np.sum(nl > l))
+            k = _propagate(S, cols, isint, l, u, pl, pu, rlo, rhi)
             if k:
-                l, u = nl, nu
                 st["tightened"] += k; changed = True
                 continue
         # free column singletons: a continuous column that appears only in one equality row, whose other terms
