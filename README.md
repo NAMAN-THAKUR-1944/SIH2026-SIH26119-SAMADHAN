@@ -12,7 +12,7 @@ SAMADHAN (समाधान, "solution") is an optimization solver written from
 HiGHS, CBC or SCIP code inside. It has three engines:
 
 * a **GPU engine for LP and convex QP**: restarted primal-dual hybrid gradient (PDLP / PDQP family), running
-  entirely on the GPU with sparse mat-vecs and CUDA graphs;
+  entirely on the GPU on its own fused CUDA C++ kernels and CUDA graphs;
 * a **C++17 core for LP and MILP**: presolve, a sparse LU factorisation, primal and dual simplex (exact vertex
   solutions) and branch-and-cut (reliability branching, node domain propagation, Gomory and c-MIR cuts,
   feasibility pump and diving heuristics);
@@ -118,7 +118,7 @@ In Windows PowerShell write `${PWD}` instead of `$PWD`. Every number in this REA
 ```mermaid
 flowchart LR
     A["Model<br/>MPS / QPS / .mat / Python API"] --> B["Scaling<br/>Ruiz + Pock–Chambolle"]
-    B --> C["GPU engine (LP + QP)<br/>restarted PDHG · adaptive steps<br/>CUDA graphs · PyTorch sparse CSR"]
+    B --> C["GPU engine (LP + QP)<br/>restarted PDHG · adaptive steps<br/>own CUDA kernels (NVRTC) · CUDA graphs"]
     A --> P["Presolve<br/>fixed · singleton · forcing rows<br/>bound propagation"]
     P --> D["C++ core (LP + MILP)<br/>sparse LU · primal + dual simplex<br/>branch-and-cut · Gomory cuts"]
     P --> I["Interior point (LP)<br/>Mehrotra predictor-corrector<br/>sparse LDLᵀ normal equations"]
@@ -437,8 +437,14 @@ examples/            a crude-selection MILP written in PuLP and solved by SAMADH
 * **LP / QP (GPU).** Restarted PDHG (Applegate et al., NeurIPS 2021; Lu & Yang, cuPDLP 2023) with Ruiz and
   Pock–Chambolle scaling, adaptive step sizes, primal-weight updates and KKT-based restarts. A constant-step
   variant has no host synchronisation between checks, so 64 iterations are captured once as a CUDA graph and
-  replayed with one launch. For QP the primal step uses `Qx + c − Kᵀy` with `τ ≤ 1/(‖Q‖/2 + σ‖K‖²)`
-  (linearised PDHG, as in PDQP) and the Wolfe dual for the gap.
+  replayed with one launch. For LPs the iteration runs on our own **CUDA C++ kernels**
+  (`samadhan/cuda_kernels.py`), compiled at run time by NVRTC, the compiler library that ships with PyTorch, so no
+  CUDA toolkit is needed: one iteration is three fused kernels (the primal step with its averaging; `K x` fused
+  with the dual step; `Kᵀy`) instead of about twenty PyTorch operations, each sparse row summed by a small group
+  of threads in a fixed order, so runs repeat exactly. In the adaptive method the candidate step goes to separate
+  buffers, the three inner products of the step-size rule come from per-block partial sums, and the averaging of
+  an accepted step is folded into the next step's kernels. For QP the primal step uses `Qx + c − Kᵀy` with
+  `τ ≤ 1/(‖Q‖/2 + σ‖K‖²)` (linearised PDHG, as in PDQP) and the Wolfe dual for the gap.
 * **Interior point.** Mehrotra predictor-corrector on the standard form `Ax = b, 0 ≤ x ≤ u` (free columns
   kept, with a small primal regularisation), after Ruiz scaling. Each iteration forms `A Θ Aᵀ`, scales it to a
   unit diagonal and factorises it once with the C++ sparse LU in symmetric mode (diagonal pivots in
@@ -455,7 +461,9 @@ examples/            a crude-selection MILP written in PuLP and solved by SAMADH
 * **Presolve.** Before the C++ core runs, the model is reduced until a pass changes nothing: fixed and empty
   columns are removed, singleton rows become bounds, rows that their activity bounds already satisfy are
   dropped, forcing rows fix their columns, integer columns get tighter bounds from the rows (domain
-  propagation), columns that neither their cost nor any row pushes upwards are fixed at a bound (dual fixing),
+  propagation, swept until nothing changes; continuous columns carry implied bounds that serve only this
+  propagation, so a deduction travels along chains such as tank inventories from period to period), columns
+  that neither their cost nor any row pushes upwards are fixed at a bound (dual fixing),
   continuous columns that sit in a single equality row which already implies their bounds are substituted out
   (free column singletons), parallel rows are merged, and doubleton equations a_j x_j + a_k x_k = b substitute a
   continuous x_k out. When none of this finds more, probing (C++) fixes every binary at 0 and at 1 in turn and
