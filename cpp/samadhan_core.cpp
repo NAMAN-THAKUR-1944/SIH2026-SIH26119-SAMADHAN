@@ -1522,15 +1522,19 @@ struct Solver {
     Clock::time_point rins_last;
     // Only while the gap to the bound exceeds 1% (near-proven models do not need it). In the tree the calls are
     // spaced by rins_wait: 10% of the time limit after a success or a new incumbent, doubled after each call that
-    // found nothing.
+    // found nothing. RINS may use 30% of the time limit, and up to 70% while its last call improved the incumbent
+    // (crude scheduling: each call found a cheaper schedule until the 30% ran out).
     double rins_last_inc = INF;
     double rins_wait = 0.0;
+    bool rins_last_ok = false;
     bool rins_due() {
         double wait = inc_obj < rins_last_inc - 1e-9 ? 0.1 * opt.time_limit : rins_wait;
         return seconds_since(rins_last) > wait;
     }
     void rins(double seconds, long nodes, double bound) {
-        if (rins_off || !std::isfinite(inc_obj) || rins_time > 0.3 * opt.time_limit || Clock::now() >= S.t_end) return;
+        if (rins_off || !std::isfinite(inc_obj) || rins_time > (rins_last_ok ? 0.7 : 0.3) * opt.time_limit ||
+            Clock::now() >= S.t_end)
+            return;
         if (inc_obj - bound <= 0.01 * std::max(1.0, std::fabs(inc_obj))) return;
         rins_last = Clock::now();
         int nint = 0, agree = 0;
@@ -1565,6 +1569,7 @@ struct Solver {
         double before = inc_obj;
         if (sub.inc_obj < inc_obj - 1e-9) try_incumbent(sub.inc);
         rins_wait = inc_obj < before ? 0.1 * opt.time_limit : std::max(0.2 * opt.time_limit, 2 * rins_wait);
+        rins_last_ok = inc_obj < before;
         rins_last_inc = inc_obj;
         rins_time += seconds_since(start);
         if (opt.verbose)

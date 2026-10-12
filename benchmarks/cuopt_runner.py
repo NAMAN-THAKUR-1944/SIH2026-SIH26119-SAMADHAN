@@ -22,7 +22,14 @@ for pkg in ("cuopt-cu13", "cuopt-cu12", "cuopt"):
         pass
 
 time_limit, tol, method = float(sys.argv[1]), float(sys.argv[2]), int(sys.argv[3])
-for f in sys.argv[4:]:
+files = sys.argv[4:]
+if files:                                           # untimed warm-up (CUDA context, libraries): the first file
+    warm = Problem.read(f"/data/{files[0]}") if hasattr(Problem, "read") else Problem.readMPS(f"/data/{files[0]}")
+    warm_settings = SolverSettings()
+    warm_settings.set_parameter("time_limit", 1.0)
+    warm_settings.set_parameter("method", method)
+    warm.solve(warm_settings)
+for f in files:
     name = f.rsplit(".", 1)[0]
     t0 = time.perf_counter()
     problem = Problem.read(f"/data/{f}") if hasattr(Problem, "read") else Problem.readMPS(f"/data/{f}")

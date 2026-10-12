@@ -52,6 +52,8 @@ def run_native(time_limit, tol, names, reuse_highs=False):
     from samadhan.mps import read_mps
     from samadhan.pdlp import solve
     rows = load()
+    from samadhan.generate import refinery_lp
+    solve(refinery_lp(R=3, C=5, P=4, D=20, T=4, seed=1), "cuda", tol=tol)   # untimed: CUDA context and kernels
     for path in sorted(DATA.glob("*.mps")):
         name = path.stem
         if names and name not in names:
