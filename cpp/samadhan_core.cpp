@@ -49,7 +49,8 @@ struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
     int features = 251;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
-                                 // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS
+                                 // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS,
+                                 // 256 flow cover cuts
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
@@ -2016,6 +2017,125 @@ struct Solver {
         return (int)cuts.size();
     }
 
+    // ---- simple generalized flow cover cuts (Van Roy & Wolsey 1986) from the original rows
+    // Each side  sum a_j z_j <= b  of a row is relaxed to a single-node flow set
+    //     sum_{N1} x_j - sum_{N2} x_j <= b',   0 <= x_j <= u_j y_j,   y_j binary
+    // with one arc per term (N1 for a > 0, N2 for a < 0): a continuous column with a variable upper bound z <= v y
+    // and lower bound 0 gives the flow |a| z with capacity |a| v and switch y; a binary column y gives the flow |a| y
+    // with capacity |a|; any other column with a finite lower bound l gives the always-open arc |a| (z - l) (switch
+    // 1). Arcs may share a switch: the row's feasible set lies inside the flow set with one switch per arc. For a
+    // flow cover C1 in N1 with lambda = sum_{C1} u_j - b' > 0 and any L2 in N2,
+    //     sum_{C1} [x_j + max(u_j - lambda, 0) (1 - y_j)] - lambda sum_{L2} y_j - sum_{N2 \ L2} x_j <= b'
+    // holds: if every arc j of C1 with u_j > lambda is open, the flow balance bounds the left side unless an arc of
+    // L2 is open, and then the capacities do (sum_{C1} x_j <= b' + lambda); if one of them is closed, the
+    // capacities give sum_{C1} x_j <= sum u_j over the open ones. C1 is built from the arcs that are most open at
+    // the LP point, per unit of capacity; L2 holds the arcs with lambda y*_j < x*_j.
+    int add_flowcover_round() {
+        int n = M.n;
+        if ((int)vub.size() != n) prepare_mir();
+        auto is_bin = [&](int j) { return M.isint[j] && root_lb[j] == 0.0 && root_ub[j] == 1.0; };
+        struct Arc { int z; int y; double a; double shift; double u; double xv; double yv; bool out; };
+        std::vector<Arc> arcs;
+        std::vector<int> c1;
+        std::vector<double> dense(n, 0.0);
+        std::vector<char> mark(n, 0);
+        std::vector<int> nz;
+        std::vector<std::vector<std::pair<int, double>>> cuts;
+        std::vector<double> lo, hi;
+        for (int i = 0; i < m_orig && (int)cuts.size() < opt.max_cuts_per_round; ++i) {
+            if (Clock::now() > S.t_end) break;
+            for (int side = 0; side < 2; ++side) {
+                double b = side == 0 ? M.rhi[i] : -M.rlo[i];
+                if (!std::isfinite(b)) continue;
+                double sgn = side == 0 ? 1.0 : -1.0;
+                arcs.clear();
+                bool ok = true, has_switch = false;
+                for (auto& e : rowsR[i]) {
+                    int j = e.first;
+                    double a = sgn * e.second, aa = std::fabs(a);
+                    if (a == 0.0) continue;
+                    if (is_bin(j)) {
+                        arcs.push_back({j, j, a, 0.0, aa, aa * S.x[j], S.x[j], a < 0});
+                        has_switch = true;
+                    } else if (!M.isint[j] && vub[j].y >= 0 && root_lb[j] == 0.0) {
+                        double v = std::min(vub[j].u, root_ub[j]);           // z <= min(v, ub) y
+                        arcs.push_back({j, vub[j].y, a, 0.0, aa * v, aa * S.x[j], S.x[vub[j].y], a < 0});
+                        has_switch = true;
+                    } else {
+                        double l = root_lb[j];
+                        if (!std::isfinite(l)) { ok = false; break; }
+                        b -= a * l;
+                        double u = std::isfinite(root_ub[j]) ? aa * (root_ub[j] - l) : INF;
+                        arcs.push_back({j, -1, a, l, u, aa * std::max(S.x[j] - l, 0.0), 1.0, a < 0});
+                    }
+                }
+                if (!ok || !has_switch || arcs.size() < 2) continue;
+                // flow cover from the inflow arcs: most open first, per unit of capacity
+                c1.clear();
+                for (int t = 0; t < (int)arcs.size(); ++t)
+                    if (!arcs[t].out && std::isfinite(arcs[t].u) && arcs[t].u > 1e-9) c1.push_back(t);
+                std::sort(c1.begin(), c1.end(), [&](int p, int q) {
+                    double rp = (1.0 - arcs[p].yv) / arcs[p].u, rq = (1.0 - arcs[q].yv) / arcs[q].u;
+                    return rp < rq || (rp == rq && arcs[p].u > arcs[q].u);
+                });
+                double cap = 0.0, tol = 1e-9 * (1.0 + std::fabs(b));
+                size_t k = 0;
+                while (k < c1.size() && cap <= b + tol) cap += arcs[c1[k++]].u;
+                if (cap <= b + tol) continue;
+                c1.resize(k);
+                double lambda = cap - b;
+                if (lambda <= 1e-6 * (1.0 + std::fabs(b))) continue;
+                // the cut over the arcs, then over the original columns:  sum coef z <= rhs
+                double rhs = b;
+                nz.clear();
+                auto add = [&](int j, double c) {
+                    if (!mark[j]) { mark[j] = 1; nz.push_back(j); dense[j] = 0.0; }
+                    dense[j] += c;
+                };
+                auto add_flow = [&](const Arc& r, double c) {           // c * x_arc
+                    double aa = std::fabs(r.a);
+                    add(r.z, c * aa);                                    // x_arc = |a| (z - shift)
+                    rhs += c * aa * r.shift;
+                };
+                std::vector<char> in_c1(arcs.size(), 0);
+                for (int t : c1) in_c1[t] = 1;
+                for (int t = 0; t < (int)arcs.size(); ++t) {
+                    const Arc& r = arcs[t];
+                    if (!r.out) {
+                        if (!in_c1[t]) continue;                         // inflow outside the cover: coefficient 0
+                        add_flow(r, 1.0);
+                        double d = std::max(r.u - lambda, 0.0);
+                        if (d > 0.0 && r.y >= 0) { add(r.y, -d); rhs -= d; }   // d (1 - y)
+                    } else if (r.y >= 0 && lambda * r.yv < r.xv) {
+                        add(r.y, -lambda);                               // L2: - lambda y
+                    } else if (r.y < 0 && lambda < r.xv) {
+                        rhs += lambda;                                   // L2 with switch 1: - lambda
+                    } else {
+                        add_flow(r, -1.0);                               // - x
+                    }
+                }
+                std::vector<std::pair<int, double>> cut;
+                double lhs = 0.0, nrm = 0.0, amax = 0.0, amin = INF;
+                for (int j : nz) {
+                    mark[j] = 0;
+                    double c = dense[j];
+                    if (std::fabs(c) < 1e-12) continue;
+                    cut.push_back({j, c});
+                    lhs += c * S.x[j]; nrm += c * c;
+                    amax = std::max(amax, std::fabs(c)); amin = std::min(amin, std::fabs(c));
+                }
+                if (cut.empty() || amax / amin > 1e6) continue;
+                if ((lhs - rhs) / std::sqrt(nrm) < 1e-4 * (1.0 + std::fabs(rhs) / std::sqrt(nrm))) continue;
+                cuts.push_back(cut); lo.push_back(-INF); hi.push_back(rhs);
+            }
+        }
+        if (cuts.empty()) return 0;
+        M.add_rows(cuts, lo, hi);
+        S.resize_to_model();
+        S.refactor_full();
+        return (int)cuts.size();
+    }
+
     // ---- complemented mixed-integer rounding (c-MIR) cuts with aggregation (Marchand & Wolsey 2001)
     // Every original row is the equation  a_i x - r_i = 0  with a continuous row activity r_i in [rlo_i, rhi_i],
     // so any combination of rows is a valid relation. Starting from one row, the relation is tried as it is and
@@ -2433,6 +2553,7 @@ struct Solver {
             int added = add_gomory_round();
             if (opt.features & 4) added += add_cover_round();
             if (opt.features & 32) added += add_mir_round();
+            if (opt.features & 256) added += add_flowcover_round();
             if (!added) break;
             auto t_end = S.t_end;
             S.t_end = std::min(t_end, cut_end);

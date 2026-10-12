@@ -160,7 +160,7 @@ def test_core_milp_matches_highs(seed):
     assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
 
 
-@pytest.mark.parametrize("features", [0, 1, 2, 4, 8, 16, 32, 64, 128, 255])
+@pytest.mark.parametrize("features", [0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 255, 507])
 def test_core_milp_every_feature(features):
     """Each branch-and-cut feature (pump, diving, covers, reliability branching, propagation, c-MIR cuts,
     fix-and-propagate, RINS) on its own and all together must reach the same proven optimum."""
