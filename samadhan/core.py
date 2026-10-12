@@ -37,7 +37,7 @@ def build(verbose=False):
     target = "x86_64-windows-gnu" if os.name == "nt" else "x86_64-linux-gnu"
     cmd = [sys.executable, "-m", "ziglang", "c++", "-O3", "-std=c++17", "-shared", "-w"]
     if os.name != "nt":
-        cmd.append("-fPIC")
+        cmd += ["-fPIC", "-pthread"]          # the parallel tree search uses std::thread
     cmd += ["-target", target, "-o", str(out), str(SRC)]
     res = subprocess.run(cmd, capture_output=not verbose, text=True)
     if res.returncode != 0:
