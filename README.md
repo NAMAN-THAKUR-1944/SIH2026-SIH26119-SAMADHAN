@@ -44,7 +44,7 @@ below, and are stored in [`results/`](results).
 | | What | Result |
 |---|---|---|
 | **LP** | Refinery planning LP, 1.16 M variables | **6.0× faster** than HiGHS at 1e-6 (cost within 0.0001 %), **35×** at 1e-4 |
-| **LP** | 14 Mittelmann LPfeas instances against NVIDIA cuOpt (GPU, 1e-4) | cuOpt is faster on all 14; SAMADHAN solves 12, its answers within 0.3 % of the optimum (most within 6e-4); HiGHS proves 5 of 14 in 300 s |
+| **LP** | 14 Mittelmann LPfeas instances against NVIDIA cuOpt (GPU, 1e-4) | cuOpt is faster on 13 of 14; SAMADHAN solves 12, its answers within 0.3 % of the optimum (most within 6e-4); HiGHS proves 5 of 14 in 300 s |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
 | **MILP** | MIPLIB 3 (all 65 models, 60 s) | **44 proved optimal**, all correct, and a feasible solution on 63; 4 of them HiGHS could not finish (mas76, nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
 | **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 38; HiGHS proves 18 and finds a solution on all 50; on 7 models SAMADHAN's solution is the better one |
@@ -211,30 +211,31 @@ optimum:
 
 | Instance | Rows × columns | Nonzeros | HiGHS (exact) | SAMADHAN (1e-4) | SAMADHAN without presolve | cuOpt PDLP (1e-4) |
 |---|---:|---:|---:|---:|---:|---:|
-| datt256 | 11,077 × 262,144 | 1,503,732 | > 300 s | 2.41 s | 3.65 s | 2.06 s |
-| ex10 | 69,608 × 17,680 | 1,162,000 | 54.9 s | 0.98 s | 0.65 s | 0.80 s |
-| graph40-40 | 360,900 × 102,600 | 1,260,900 | > 300 s | 1.88 s | 0.87 s | 0.84 s |
+| datt256 | 11,077 × 262,144 | 1,503,732 | > 300 s | 2.59 s | 3.65 s | 2.06 s |
+| ex10 | 69,608 × 17,680 | 1,162,000 | 54.9 s | 0.87 s | 0.65 s | 0.80 s |
+| graph40-40 | 360,900 × 102,600 | 1,260,900 | > 300 s | 1.31 s | 0.87 s | 0.84 s |
 | irish-electricity | 104,259 × 61,728 | 523,257 | 64.1 s | > 300 s | 17.2 s (objective 3.6 % low) | 5.76 s |
-| neos-5052403-cygnet | 38,268 × 32,868 | 4,898,304 | > 300 s | 11.7 s | 10.4 s | 4.53 s |
-| neos-5251015 | 486,531 × 136,971 | 1,955,388 | 107 s | 3.36 s | 1.66 s (objective 0, optimum 0.106) | 2.49 s |
-| physiciansched3-3 | 266,227 × 79,555 | 1,062,479 | > 300 s | 77.6 s | > 300 s | 24.7 s |
-| qap15 | 6,330 × 22,275 | 94,950 | > 300 s | 0.56 s | 0.51 s | 0.34 s |
-| rmine15 | 358,395 × 42,438 | 879,732 | > 300 s | 22.6 s | 21.9 s | 7.64 s |
+| neos-5052403-cygnet | 38,268 × 32,868 | 4,898,304 | > 300 s | 11.5 s | 10.4 s | 4.53 s |
+| neos-5251015 | 486,531 × 136,971 | 1,955,388 | 107 s | 2.88 s | 1.66 s (objective 0, optimum 0.106) | 2.49 s |
+| physiciansched3-3 | 266,227 × 79,555 | 1,062,479 | > 300 s | 75.2 s | > 300 s | 24.7 s |
+| qap15 | 6,330 × 22,275 | 94,950 | > 300 s | 0.57 s | 0.51 s | 0.34 s |
+| rmine15 | 358,395 × 42,438 | 879,732 | > 300 s | 22.7 s | 21.9 s | 7.64 s |
 | s100 | 14,733 × 364,417 | 1,777,917 | > 300 s | > 300 s | > 300 s | 230 s |
-| s250r10 | 10,962 × 273,142 | 1,318,607 | 57.5 s | 16.1 s (objective 0.3 % off) | 5.45 s (objective −0.386, optimum −0.173) | 22.0 s |
-| savsched1 | 295,989 × 328,575 | 1,770,507 | > 300 s | 3.50 s | 1.45 s | 1.68 s |
-| supportcase10 | 165,684 × 14,770 | 555,082 | 79.2 s | 3.93 s | 6.30 s | 2.65 s |
-| woodlands09 | 194,599 × 382,147 | 2,646,003 | > 300 s | 5.85 s | 1.76 s | 1.85 s |
+| s250r10 | 10,962 × 273,142 | 1,318,607 | 57.5 s | 16.3 s (objective 0.3 % off) | 5.45 s (objective −0.386, optimum −0.173) | 22.0 s |
+| savsched1 | 295,989 × 328,575 | 1,770,507 | > 300 s | 2.15 s | 1.45 s | 1.68 s |
+| supportcase10 | 165,684 × 14,770 | 555,082 | 79.2 s | 3.86 s | 6.30 s | 2.65 s |
+| woodlands09 | 194,599 × 382,147 | 2,646,003 | > 300 s | 4.23 s | 1.76 s | 1.85 s |
 
-**cuOpt is the stronger GPU solver here: it is faster on all 14 instances.** The first run of this comparison
+**cuOpt is the stronger GPU solver here: it is faster on 13 of the 14 instances** (on s250r10 SAMADHAN is
+faster, but its objective is 0.3 % off and cuOpt's 0.01 %). The first run of this comparison
 showed SAMADHAN's real weakness: on three instances its 1e-4 point passed the stopping test with a clearly wrong
 objective (third time column). The test compares norms of the residuals with norms of the data, and where the
 duals are large (irish-electricity: up to 17,000) a residual of 0.05 in a few rows still moves the objective by
 thousands. The GPU engine now presolves the LP first, with the presolve of the C++ core, and the smaller model is
 better conditioned: neos-5251015 comes out exact, s250r10 within 0.3 % (was 0.21 absolute), physiciansched3-3 is
-solved (78 s; before not in 300 s), supportcase10 is faster, and irish-electricity no longer returns a wrong
+solved (75 s; before not in 300 s), supportcase10 is faster, and irish-electricity no longer returns a wrong
 answer, though it still does not converge within 300 s. Every other SAMADHAN objective agrees with cuOpt's to
-6e-4 or better. The price is the presolve itself, which is Python and takes 0.04–4.9 s here: on ex10, savsched1
+6e-4 or better. The price is the presolve itself, which is Python and takes 0.03–2.6 s here: on ex10, savsched1
 and woodlands09, where SAMADHAN was faster than cuOpt without it, it is now slower. Both GPU solvers are far ahead
 of HiGHS on models of this size: HiGHS proves 5 of the 14 within 300 s. Next for the GPU engine: a faster presolve,
 a stopping test that also bounds the objective error, and a better restart scheme (a prototype of the restarted
