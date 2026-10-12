@@ -8,8 +8,9 @@ Short, honest answers. Every number quoted in the [README](../README.md) has its
 
 The solver code is ours: the MPS/QPS readers, presolve (bound propagation, probing, parallel rows, doubleton
 substitution), scaling, the GPU engine (restarted PDHG with its own CUDA C++ kernels), the C++17 core (sparse LU
-with Forrest–Tomlin updates, primal and dual simplex, crossover, branch-and-cut with Gomory and c-MIR cuts,
-reliability branching, node propagation, feasibility pump, diving, fix-and-propagate and RINS), the
+with Forrest–Tomlin updates, primal and dual simplex, crossover, branch-and-cut with Gomory, c-MIR and flow cover
+cuts, reliability branching, node propagation, feasibility pump, diving, fix-and-propagate, RINS and a deterministic
+parallel tree search), the
 interior-point method and the PuLP / Pyomo plugins. No code from CPLEX, Gurobi, Xpress, HiGHS, CBC or SCIP is
 inside.
 
@@ -35,7 +36,7 @@ today; a faster presolve, a stopping test that bounds the objective error and a 
 ### Where is SAMADHAN faster than HiGHS, and where slower?
 
 Faster: large LPs on the GPU (the 1.16 M-variable refinery planning LP), large convex QPs (from 110k variables HiGHS
-does not finish in 600 s), the small refinery-planning MILP, and 21 MIPLIB 3 models, plus four (nw04, pk1, qiu,
+does not finish in 600 s), the small refinery-planning MILP, and 20 MIPLIB 3 models, plus four (nw04, pk1, qiu,
 arki001) that HiGHS does not finish in 60 s.
 
 Slower: small LPs (HiGHS's simplex median is lower), MILP in general (MIPLIB 3: 44 proved against HiGHS's 50;
@@ -76,15 +77,20 @@ platform would be work, but bounded work. The C++ core is self-contained C++17 w
 * `python -m samadhan verify` solves LP, QP and MILP models with every engine, compares each answer with HiGHS
   or a hand-worked optimum, and recomputes feasibility from the returned solution vector instead of trusting the
   solver's report.
-* The test suite (77 tests) runs in CI on Ubuntu and Windows on every push.
-* Every benchmark answer is compared with HiGHS; every "proved optimal" MILP result matches the known optimum,
-  and every MILP solution is checked against the model's original rows.
+* The test suite (78 tests) runs in CI on Ubuntu and Windows on every push.
+* Every benchmark answer is compared with HiGHS, and every "proved optimal" MILP result matches the known optimum.
+  Since 2026-10-13 the MIPLIB, MRPL and thread benchmarks also record how far each MILP solution is from satisfying
+  the model's original rows, bounds and integrality. That check found a real bug: the solver tested new incumbents
+  on the scaled rows, and on MIPLIB 3's enigma it reported as optimal a point that misses one equality row by 1.0.
+  Incumbents are now tested in each row's own units; no solution in those tables is off by more than 1e-6.
 
 ### Are the benchmarks fair?
 
 Both solvers run on the same laptop, with the same time limit and, for MILP, the same relative gap (1e-4) and one
 CPU thread each. On LP, HiGHS is credited with the faster of its two methods (dual simplex and interior point).
-GPU-against-CPU comparisons are exactly that, and the README says so. Benchmarks run alone and on mains power;
+GPU-against-CPU comparisons are exactly that, and the README says so. The parallel tree search is compared with
+SAMADHAN itself on one thread, each model alone on the machine; every comparison with HiGHS stays at one thread
+each. Benchmarks run alone and on mains power;
 since 2026-10-09 also not while the battery charges, which we found slows everything, HiGHS included, by
 1.2–1.5×.
 
@@ -93,10 +99,21 @@ since 2026-10-09 also not while the battery charges, which we found slows everyt
 LP solves are: the simplex refactorises after a counted amount of work rather than after a time, and the GPU
 engine's native kernels add up in a fixed order, so two runs give the same iterations and the same answer. In
 branch-and-cut, some budgets are measured in seconds (the root cut rounds, the spacing of RINS calls), so MILP
-runs that reach those points, and every result that stops at a time limit, depend on the machine's speed.
+runs that reach those points, and every result that stops at a time limit, depend on the machine's speed. The
+parallel tree search keeps this property: its threads work in rounds that end after a fixed number of simplex
+iterations, and their results are merged in a fixed order, so the same model with the same thread count gives the
+same tree on every run.
+
+### Does it use more than one CPU core?
+
+For MILP, yes: `--threads N` (or `threads=` in the Python API and both plugins) runs the branch-and-bound tree on N
+threads. On MIPLIB 3, alone on the laptop, 4 threads prove 48 models against 45 with one, and 8 threads are 2.1×
+faster on the models all prove; on the medium crude scheduling instances they find schedules up to 4.6× cheaper
+within the minute. Presolve, the root LP and the cuts still run on one thread, so the gain is about 2×, not 8×.
+The GPU engine uses the GPU's thousands of threads; the simplex for LP is sequential.
 
 ### What is next?
 
 The [roadmap](../README.md#roadmap-sih-build-phase): crossover at a million variables, local branching for
-scheduling models, clique and enumeration presolve, lifted cover and flow-cover cuts, parallel tree search, GPU
-LP relaxations inside branch-and-bound, and a REST service for plant planning systems.
+scheduling models, clique and enumeration presolve, lifted cover cuts and multi-row flow covers, an asynchronous
+parallel mode, GPU LP relaxations inside branch-and-bound, and a REST service for plant planning systems.

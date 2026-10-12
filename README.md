@@ -46,8 +46,9 @@ below, and are stored in [`results/`](results).
 | **LP** | Refinery planning LP, 1.16 M variables | **6.0× faster** than HiGHS at 1e-6 (cost within 0.0001 %), **35×** at 1e-4 |
 | **LP** | 14 Mittelmann LPfeas instances against NVIDIA cuOpt (GPU, 1e-4) | cuOpt is faster on 13 of 14; SAMADHAN solves 12, its answers within 0.3 % of the optimum (most within 6e-4); HiGHS proves 5 of 14 in 300 s |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
-| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **44 proved optimal**, all correct, and a feasible solution on 63; 4 of them HiGHS could not finish (arki001, nw04, pk1, qiu); faster than HiGHS on 21; HiGHS proves 50 |
-| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 37; HiGHS proves 18 and finds a solution on all 50; on 6 models SAMADHAN's solution is the better one |
+| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **44 proved optimal**, all correct, and a feasible solution on 63; 4 of them HiGHS could not finish (arki001, nw04, pk1, qiu); faster than HiGHS on 20; HiGHS proves 50 |
+| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 36; HiGHS proves 18 and finds a solution on all 50; on 6 models SAMADHAN's solution is the better one |
+| **MILP** | Parallel tree search, MIPLIB 3 (60 s, each model alone) | 1 → 4 → 8 threads: 45 → 48 → 46 proved optimal; **1.8×** and **2.1×** faster on the 24 models all three prove; the same tree on every run (deterministic) |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
@@ -122,7 +123,7 @@ flowchart LR
     A["Model<br/>MPS / QPS / .mat / Python API"] --> B["Scaling<br/>Ruiz + Pock–Chambolle"]
     B --> C["GPU engine (LP + QP)<br/>restarted PDHG · adaptive steps<br/>own CUDA kernels (NVRTC) · CUDA graphs"]
     A --> P["Presolve<br/>fixed · singleton · forcing rows<br/>bound propagation"]
-    P --> D["C++ core (LP + MILP)<br/>sparse LU · primal + dual simplex<br/>branch-and-cut · Gomory cuts"]
+    P --> D["C++ core (LP + MILP)<br/>sparse LU · primal + dual simplex<br/>branch-and-cut · parallel tree search"]
     P --> I["Interior point (LP)<br/>Mehrotra predictor-corrector<br/>sparse LDLᵀ normal equations"]
     I -- crossover --> D
     C -- crossover --> D
@@ -254,7 +255,7 @@ compressed-MPS encoding, which none of the three solvers reads; they were left o
 All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 44
 optimal**, every one matching the known optimum, and finds a feasible solution on **63 of 65**; HiGHS proves 50.
 SAMADHAN finishes **nw04 (87,482 columns), pk1, qiu and arki001** where HiGHS runs out of time (and mas76 in some
-rounds: it needs about 60 s), and is faster than HiGHS on 21 of the models both prove, for example air03 (0.8 s vs
+rounds: it needs about 60 s), and is faster than HiGHS on 20 of the models both prove, for example air03 (0.8 s vs
 2.8 s), gesa3 (0.9 s vs 3.4 s), cap6000 (0.4 s vs 2.0 s), mitre (1.3 s vs 3.0 s) and rentacar (2.9 s vs 10.4 s).
 
 How it got here, each step measured on the same models:
@@ -305,6 +306,14 @@ solutions with both, shifted geo-mean 14.9 s against 15.3 s, better incumbents o
 was validated during development against a brute-force check on small random rows; two extended variants failed
 that check and were left out.
 
+Checking every solution against the model's original rows (the benchmarks now record the largest violation of each
+one) found a bug in this round: the test that accepts a new incumbent worked on the scaled rows, so a row that
+scaling divides by about 2²⁰ could hide a violation of 1.0. enigma was reported optimal with a point that misses an
+equality row by 1, and dsbmip with one that misses a row by 1e-5 of its right-hand side. Incumbents are now checked
+row by row in the model's own units (a regression test covers it), no solution in the MIPLIB, MRPL and thread
+tables violates a row, bound or integrality by more than 1e-6, and both models still end proved optimal, dsbmip in
+5.8 s instead of 0.2 s (HiGHS 0.4 s).
+
 The branch-and-cut work finds the first feasible solutions on 10teams, fixnet6, harp2, mkc, p2756 and set1ch,
 newly proves 10teams, pp08a and pp08aCUTS, and cuts solve times sharply on many models (gesa2 21 s → 0.9 s, vpm1
 14 s → 0.01 s, qnet1 33 s → 19 s, p0548 6.9 s → 2.9 s). The aggregated c-MIR cuts close most of the root gap on
@@ -317,10 +326,11 @@ made things slower on average and are off by default.
 **MIPLIB 2017** (50 models of the current benchmark set, 60 s, one thread, gap 1e-4) is much harder, and here HiGHS
 is clearly ahead: it proves **18** optimal and finds a solution on all 50; SAMADHAN proves **5** (markshare_4_0,
 neos8, nw04, pk1, swath1, all correct; markshare_4_0, nw04 and pk1 are not proved by HiGHS in 60 s) and finds a
-solution on 37. On 6 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-662469, neos-957323,
+solution on 36. On 6 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-662469, neos-957323,
 pk1, rmatr100-p10). With flow cover cuts the incumbent improves on 9 models (beasleyC3 914 → 890, tr12-30
 136,588 → 132,452, p200x1188c 15,531 → 15,078) and gets worse on 10 (neos-860300 3,451 → 4,255, ran14x18-disj-8,
-glass4), and timtab1, which had a solution of 1.47 M in the previous round, ends the minute without one. RINS improves the incumbent on 14 of the 50 models and ends worse on 7, for example
+glass4), and timtab1, which had a solution of 1.47 M in the previous round, ends the minute without one; so does
+graph20-20-1rand in this run with six models at a time (alone it finds −8, HiGHS's value). RINS improves the incumbent on 14 of the 50 models and ends worse on 7, for example
 neos-860300 (5,419 → 4,342), timtab1 (1.07 M → 0.99 M) and p200x1188c (18,832 → 15,078, equal to HiGHS); swath3, where
 SAMADHAN was ahead, is now 0.4 % behind. Presolve, the gap measured on this set, now probes binaries, merges
 parallel rows and substitutes doubleton equations: it matches HiGHS's presolve on 30n20b8 (491 × 4,748 against
@@ -385,7 +395,7 @@ medium seed 9 from 92,404 to 25,847. The schedule costs in the latest round, wit
 
 | Crude scheduling | Seed 7 | Seed 8 | Seed 9 | Before the propagation |
 |---|---:|---:|---:|---|
-| S | 4,180 (4,095, optimal) | 200 (115) | 300 (275) | 4,450 / 1,585 / 675 |
+| S | 4,230 (4,095, optimal) | 200 (115) | 300 (275) | 4,450 / 1,585 / 675 |
 | M | 21,073 (17,905) | 18,720 (9,722) | 50,817 (815) | 0.38 M / 0.62 M / 0.78 M |
 | L | **263,407** (647,923) | **872,006** (884,317) | 887,077 (738,807) | 374,541 / 910,373 / none |
 
@@ -403,6 +413,67 @@ are basic); every MIPLIB 3 root LP and every other MRPL-shaped one needs at most
 exactly its path. All three large instances now get a schedule, two of them cheaper than HiGHS's; seed 7 has ended
 at 374,541, 889,836 and now 263,407 in three rounds, a reminder that results within a minute move with the timing of
 the heuristics.
+
+### MILP — parallel tree search
+
+`--threads N` on the command line (`solve_core(..., threads=N)`, `SAMADHAN(threads=N)` in PuLP,
+`options={"threads": N}` in Pyomo; 0 = one per logical CPU) runs the branch-and-bound tree on N threads. Presolve,
+the root LP, the cut rounds and the root heuristics still run on one.
+
+The search is **deterministic**. It runs in rounds: at the start of a round the best open nodes are dealt out to
+the threads; each thread works on its own copy of the solver (model with the root cuts, simplex, pseudocosts,
+incumbent) and processes its nodes as the serial search does, best bound first and plunging into one child, until
+it has done a fixed amount of simplex work; then the open nodes, incumbents and pseudocost observations of all
+threads are merged in thread order. A round ends after a count of simplex iterations, not after a time, so the same
+model with the same thread count gives the same tree and the same answer on every run, however the operating system
+schedules the threads (the tests check this on three models; only the time limit and the time-based heuristic
+budgets, which the serial search has too, depend on the machine). A node's bounds are a chain of bound-change blocks
+shared with its ancestors, so a node can move to any thread.
+
+All 65 MIPLIB 3 models, each alone on the laptop (Intel Core 7 240H: 6 performance and 4 efficiency cores, 16
+threads), 60 s, gap 1e-4 (`python -m benchmarks.threads`):
+
+| Threads | Proved optimal | Shifted geo-mean time | Speed-up over 1 thread ¹ |
+|---:|---:|---:|---:|
+| 1 | 45 | 14.1 s | — |
+| 4 | 48 | 11.2 s | 1.77× |
+| 8 | 46 | 11.1 s | 2.08× |
+
+¹ geometric mean over the 24 models that all three prove and that take one thread at least a second. One
+thread alone proves 45, one more than in the MIPLIB 3 table above, where six models ran at a time: mas76 needs
+56 s alone.
+
+The tree-heavy models gain most (1 → 4 → 8 threads): misc07 33.8 → 14.2 → 5.4 s, mas76 56.0 → 14.8 → 9.8 s, stein45
+22.5 → 7.1 → 4.8 s, qiu 40.1 → 11.4 → 9.8 s, l152lav 16.5 → 4.9 → 3.2 s; models decided at the root (nw04, mitre,
+rentacar) do not change. With 4 threads 10teams, air05 and vpm2 are proved within the minute, with 8 threads bell5
+and vpm2; 8 threads does not prove 10teams, air05 and arki001, where the 4-thread search came on the optimal
+solution in time and the 8-thread one did not, which is why 8 threads proves fewer. Every proved optimum matches
+HiGHS's and every solution was checked against the model's rows. The speed-up stays near 2× because the root is
+sequential and a round waits for its slowest thread (with eight threads on six performance cores, some share a core
+or run on an efficiency core); an asynchronous mode would use the cores better, at the price of repeatable runs.
+
+On crude scheduling the extra threads mostly buy cheaper schedules within the minute (each run alone; HiGHS with
+one thread, as everywhere in this README; bold: cheaper than HiGHS):
+
+| Crude scheduling | 1 thread | 4 threads | 8 threads | HiGHS (1 thread) |
+|---|---:|---:|---:|---:|
+| S seed 7 | 4,130 | 4,100 | 4,155 | 4,095 (optimal) |
+| S seed 8 | 120 | 120 | 120 | 115 |
+| S seed 9 | 275 | 275 | 280 | 275 |
+| M seed 7 | 30,532 | 27,030 | 19,448 | 17,905 |
+| M seed 8 | 35,996 | 14,036 | **7,878** | 9,722 |
+| M seed 9 | 44,425 | 23,515 | 28,398 | 815 |
+| L seed 7 | 870,619 | 814,939 | 870,619 | 647,923 |
+| L seed 8 | **872,006** | **872,006** | **872,006** | 884,317 |
+| L seed 9 | **25,473** | **25,473** | **25,473** | 738,807 |
+
+On the medium instances 4 and 8 threads cut the schedule cost by 1.1–4.6×; with 8 threads medium seed 8 is cheaper
+than HiGHS's (7,878 against 9,722) and seed 7 within 9 % of it, while seed 9 stays far behind (HiGHS 815). On the
+large instances most of the minute goes to the root (the root LP on the scaled copy and the heuristics), so the
+threads change little. Run alone, large seed 9 gets a schedule of 25,473 against HiGHS's 738,807, while in the
+six-at-a-time run of the table above it got 887,077: the heuristics' time budgets give a loaded machine less. The
+small planning models are proved up to 2.2× faster; on medium planning seed 7 the 4- and 8-thread runs end 5 % above
+the one-thread plan.
 
 ### QP — Maros–Meszaros and refinery QP
 
@@ -441,6 +512,9 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
   nine instances with one thread each: 1.0–1.7× cheaper on the small ones, 1.2–1.9× on two medium ones and 62× on
   the third, whose LP bound stays weak after our presolve; on the large ones SAMADHAN's schedules are cheaper on
   two (one 2.5× cheaper) and 1.2× dearer on the third. There is no local branching yet.
+* The parallel tree search speeds up the tree only: presolve, the root LP, cuts and root heuristics run on one
+  thread, and its deterministic rounds wait for the slowest thread, so 8 threads give about 2× on MIPLIB
+  3, not 8×, and prove 46 models against 48 with 4 threads. The comparisons with HiGHS use one thread each.
 * Presolve has the standard primal reductions, dual fixing, parallel rows, doubleton substitution and probing,
   but no clique table or enumeration of small rows yet (HiGHS's presolve removes all of ex9 that way), and no
   dominated or duplicate columns or coefficient strengthening. The branch-and-cut root bound is still weaker than
@@ -454,11 +528,12 @@ python -m venv .venv
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128   # or /whl/cpu
 .venv/Scripts/pip install -r requirements.txt
 .venv/Scripts/python -m samadhan verify                         # self-check of every engine, ~10 s
-.venv/Scripts/python -m pytest                                  # 77 correctness tests, ~65 s
+.venv/Scripts/python -m pytest                                  # 78 correctness tests, ~65 s
 .venv/Scripts/python -m samadhan demo --size XL --tol 1e-6      # 1.16M-variable refinery LP on the GPU
 .venv/Scripts/python -m samadhan solve model.mps                # engine picked from the model
 .venv/Scripts/python -m samadhan solve model.mps --engine core  # force the C++ dual simplex / branch-and-cut
 .venv/Scripts/python -m samadhan solve model.mps --engine ipm   # interior point + crossover to a vertex
+.venv/Scripts/python -m samadhan solve model.mps --threads 8    # MILP: parallel tree search on 8 threads
 ```
 
 ```python
@@ -512,6 +587,8 @@ git clone https://github.com/coin-or-tools/Data-miplib3 data/miplib3
 python -m benchmarks.miplib              # MIPLIB 3                       -> results/milp_miplib3.json
 python -m benchmarks.miplib --set miplib2017   # 50 MIPLIB 2017 models     -> results/milp_miplib2017.json
 python -m benchmarks.mrpl                # MRPL-shaped MILPs (generated) -> results/milp_mrpl.json
+python -m benchmarks.threads             # MIPLIB 3, 1 / 4 / 8 threads     -> results/milp_threads.json
+python -m benchmarks.threads --set mrpl  # MRPL MILPs, 1 / 4 / 8 threads   -> results/milp_mrpl_threads.json
 # (the .mps.gz files of the models listed in benchmarks/miplib.py, from miplib.zib.de/WebData/instances/)
 # Maros-Meszaros .mat files (< 300 KB) from github.com/qpsolvers/maros_meszaros_qpbenchmark -> data/maros/
 python -m benchmarks.qp maros            # Maros-Meszaros QPs             -> results/qp_maros.json
@@ -610,14 +687,19 @@ examples/            a crude-selection MILP written in PuLP and solved by SAMADH
   strong branching (25 dual simplex iterations per child, at most half of all LP work), and every node runs
   activity-based domain propagation that prunes infeasible nodes before their LP. Each feature can be switched
   off (`solve_core(..., features=)`); the defaults were chosen by an ablation over MIPLIB 3.
+* **Parallel tree search.** With `threads=N` the tree runs in rounds of a fixed amount of simplex work per thread on
+  N copies of the solver; the best open nodes are dealt out at the start of a round, and nodes, incumbents and
+  pseudocosts are merged in thread order at its end, so the search is the same on every run. Node bounds are
+  chains of bound-change blocks shared between nodes (reference counted, so nodes move freely between threads).
 
 ## Roadmap (SIH build phase)
 
 1. Crossover at a million variables (the 1.16 M refinery LP); dense columns in the interior-point method.
 2. Local branching and lighter RINS sub-MIPs for large scheduling models; clique table and enumeration presolve
-   (ex9), dominated and duplicate columns; lifted cover and flow-cover cuts; parallel tree search.
+   (ex9), dominated and duplicate columns; lifted cover cuts and multi-row flow covers; an asynchronous parallel
+   mode next to the deterministic one.
 3. GPU LP relaxations inside branch-and-bound for very large MILPs; MIQP.
-4. Native CUDA kernels for the PDHG loop; REST service for plant planning systems.
+4. A REST service for plant planning systems.
 
 ## Team and license
 
@@ -629,7 +711,7 @@ answers for it:
 | Naman Thakur (lead) | architecture; C++ LP core: sparse LU, Forrest–Tomlin update, simplex, crossover | `cpp/samadhan_core.cpp` (LP), `samadhan/core.py` |
 | Sayom Shani | GPU engine: PDLP / PDQP, native CUDA kernels, CUDA graphs | `samadhan/pdlp.py`, `samadhan/cuda_kernels.py` |
 | Lahari | presolve, probing, model readers | `samadhan/presolve.py`, `samadhan/mps.py`, `samadhan/qpdata.py` |
-| Avinash | branch-and-cut: cuts, branching, heuristics (pump, diving, fix-and-propagate, RINS) | `cpp/samadhan_core.cpp` (MILP) |
+| Avinash | branch-and-cut: cuts, branching, heuristics (pump, diving, fix-and-propagate, RINS), parallel tree search | `cpp/samadhan_core.cpp` (MILP) |
 | Rajat Goel | interior point, verification, tests, CI, Docker | `samadhan/ipm.py`, `samadhan/verify.py`, `tests/`, `Dockerfile` |
 | Manit Thakur | MRPL models, PuLP / Pyomo plugins, benchmarks, demo | `samadhan/crude.py`, `samadhan/generate.py`, `samadhan/*_solver.py`, `benchmarks/` |
 
