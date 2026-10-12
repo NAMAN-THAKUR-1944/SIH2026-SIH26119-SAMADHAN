@@ -21,6 +21,7 @@ Reductions, repeated until a pass changes nothing:
     (x_k = x_j or x_k = 1 - x_j, recovered in postsolve).
 Only the primal solution is mapped back. Models with a quadratic objective are passed through unchanged.
 """
+import math
 from dataclasses import dataclass, field, replace
 
 import numpy as np
@@ -331,17 +332,20 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
                 k, ak, j, aj = max(opts, key=lambda o: abs(o[1]))
                 if abs(aj / ak) > 1e3:
                     continue
-                b = lo[i]
-                # x_k in [l_k, u_k]  <=>  a_j x_j in [b - a_k u_k, b - a_k l_k]  (ends swapped if a_k < 0)
-                with np.errstate(over="ignore", invalid="ignore"):
-                    e1, e2 = b - ak * u[k], b - ak * l[k]
-                    ylo, yhi = (e1, e2) if ak > 0 else (e2, e1)
-                    nl, nu = (ylo / aj, yhi / aj) if aj > 0 else (yhi / aj, ylo / aj)
-                nl = float(np.nan_to_num(nl, nan=-np.inf, posinf=np.inf, neginf=-np.inf))
-                nu = float(np.nan_to_num(nu, nan=np.inf, posinf=np.inf, neginf=-np.inf))
+                b, ak, aj = float(lo[i]), float(ak), float(aj)
+                # x_k in [l_k, u_k]  <=>  a_j x_j in [b - a_k u_k, b - a_k l_k]  (ends swapped if a_k < 0);
+                # plain floats here: this loop runs once per doubleton (56,234 on woodlands09)
+                e1, e2 = b - ak * float(u[k]), b - ak * float(l[k])
+                ylo, yhi = (e1, e2) if ak > 0 else (e2, e1)
+                nl, nu = (ylo / aj, yhi / aj) if aj > 0 else (yhi / aj, ylo / aj)
+                nl = -math.inf if nl != nl else nl        # inf - inf: no bound
+                nu = math.inf if nu != nu else nu
                 if isint[j]:
-                    nl, nu = _ceil(np.array([nl]))[0], _floor(np.array([nu]))[0]
-                nl, nu = max(l[j], nl), min(u[j], nu)
+                    if math.isfinite(nl):
+                        nl = float(math.ceil(nl - INT_TOL * max(1.0, abs(nl))))
+                    if math.isfinite(nu):
+                        nu = float(math.floor(nu + INT_TOL * max(1.0, abs(nu))))
+                nl, nu = max(float(l[j]), nl), min(float(u[j]), nu)
                 if np.isfinite(nl) and np.isfinite(nu) and nl - nu > FEAS_TOL * (1.0 + abs(nl)):
                     return fail("infeasible")
                 l[j], u[j] = nl, max(nl, nu)

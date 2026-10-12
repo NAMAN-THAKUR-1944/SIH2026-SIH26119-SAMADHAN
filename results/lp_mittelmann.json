@@ -11,13 +11,13 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 0.7837325999280438,
-   "setup": 2.8649941999465227,
-   "iters": 640,
-   "obj": 256.0000598147643,
-   "rel_p": 9.258199329048675e-05,
+   "time": 0.23778070000025764,
+   "setup": 2.167917899999793,
+   "iters": 448,
+   "obj": 255.99999915263925,
+   "rel_p": 1.1951265153546241e-05,
    "rel_d": 0.0,
-   "rel_gap": 2.9631000404091062e-05,
+   "rel_gap": 8.158054237561164e-05,
    "device": "cuda+native",
    "obj_err": null
   },
@@ -31,7 +31,20 @@
    "read": 1.4655107109992969,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 0.7837325999280438,
+   "setup": 2.8649941999465227,
+   "iters": 640,
+   "obj": 256.0000598147643,
+   "rel_p": 9.258199329048675e-05,
+   "rel_d": 0.0,
+   "rel_gap": 2.9631000404091062e-05,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "ex10",
@@ -45,15 +58,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 0.27073749992996454,
-   "setup": 0.37455450010020286,
+   "time": 0.1277074999998149,
+   "setup": 0.8543909999998505,
    "iters": 384,
-   "obj": 100.00007271268193,
-   "rel_p": 6.73892377495782e-06,
+   "obj": 100.00003032933222,
+   "rel_p": 1.1997018844255826e-05,
    "rel_d": 0.0,
-   "rel_gap": 1.212779588619403e-05,
+   "rel_gap": 6.166161733138776e-06,
    "device": "cuda+native",
-   "obj_err": 7.271268246711354e-07
+   "obj_err": 3.0329332759038314e-07
   },
   "time_limit": 300.0,
   "tol": 0.0001,
@@ -65,7 +78,20 @@
    "read": 0.994500146000064,
    "obj_err": 5.778310937628848e-05
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 0.27073749992996454,
+   "setup": 0.37455450010020286,
+   "iters": 384,
+   "obj": 100.00007271268193,
+   "rel_p": 6.73892377495782e-06,
+   "rel_d": 0.0,
+   "rel_gap": 1.212779588619403e-05,
+   "device": "cuda+native",
+   "obj_err": 7.271268246711354e-07,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "graph40-40",
@@ -79,13 +105,13 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 0.29195950005669147,
-   "setup": 0.5761323999613523,
-   "iters": 192,
+   "time": 0.05230250000022352,
+   "setup": 1.8246775000002344,
+   "iters": 128,
    "obj": -300.0,
-   "rel_p": 1.4089600219325268e-05,
+   "rel_p": 5.574783669236441e-05,
    "rel_d": 0.0,
-   "rel_gap": 1.8988926162378088e-05,
+   "rel_gap": 2.3050684514033503e-05,
    "device": "cuda+native",
    "obj_err": null
   },
@@ -99,7 +125,20 @@
    "read": 3.0559435889999804,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 0.29195950005669147,
+   "setup": 0.5761323999613523,
+   "iters": 192,
+   "obj": -300.0,
+   "rel_p": 1.4089600219325268e-05,
+   "rel_d": 0.0,
+   "rel_gap": 1.8988926162378088e-05,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "irish-electricity",
@@ -112,16 +151,16 @@
    "time": 64.1362748000538
   },
   "samadhan": {
-   "status": "optimal",
-   "time": 16.980643399991095,
-   "setup": 0.2101943000452593,
-   "iters": 72128,
-   "obj": 2454380.229408593,
-   "rel_p": 3.6506617956203268e-06,
-   "rel_d": 9.864606848622924e-05,
-   "rel_gap": 2.290040514120686e-07,
+   "status": "time_limit",
+   "time": 300.01066439999977,
+   "setup": 0.4442785000001095,
+   "iters": 1201984,
+   "obj": 2457281.9193342216,
+   "rel_p": 1.5639493573600997e-05,
+   "rel_d": 0.00031541130284314735,
+   "rel_gap": 0.0003175009776228183,
    "device": "cuda+native",
-   "obj_err": 0.03608214796519648
+   "obj_err": 0.034942556516866966
   },
   "time_limit": 300.0,
   "tol": 0.0001,
@@ -133,15 +172,28 @@
    "read": 1.031251197000529,
    "obj_err": 0.0007133643267296144
   },
-  "samadhan_tight": {
-   "tol": 1e-05,
-   "status": "time_limit",
-   "time": 301.77,
-   "obj": 2454384.2,
-   "obj_err": 0.036,
-   "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
-  },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 16.980643399991095,
+   "setup": 0.2101943000452593,
+   "iters": 72128,
+   "obj": 2454380.229408593,
+   "rel_p": 3.6506617956203268e-06,
+   "rel_d": 9.864606848622924e-05,
+   "rel_gap": 2.290040514120686e-07,
+   "device": "cuda+native",
+   "obj_err": 0.03608214796519648,
+   "tight_1e-5": {
+    "tol": 1e-05,
+    "status": "time_limit",
+    "time": 301.77,
+    "obj": 2454384.2,
+    "obj_err": 0.036,
+    "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
+   },
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "neos-5052403-cygnet",
@@ -155,13 +207,13 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 9.038716100039892,
-   "setup": 1.3127803999232128,
-   "iters": 9728,
-   "obj": 179.499936241549,
-   "rel_p": 3.4210712325804158e-06,
+   "time": 9.27507420000029,
+   "setup": 2.4094747999997708,
+   "iters": 10048,
+   "obj": 179.49911007115077,
+   "rel_p": 3.5427776506969453e-06,
    "rel_d": 0.0,
-   "rel_gap": 9.946932979943588e-05,
+   "rel_gap": 9.93723348141174e-05,
    "device": "cuda+native",
    "obj_err": null
   },
@@ -175,7 +227,20 @@
    "read": 2.161022420000336,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 9.038716100039892,
+   "setup": 1.3127803999232128,
+   "iters": 9728,
+   "obj": 179.499936241549,
+   "rel_p": 3.4210712325804158e-06,
+   "rel_d": 0.0,
+   "rel_gap": 9.946932979943588e-05,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "neos-5251015",
@@ -189,15 +254,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 0.8280238999286667,
-   "setup": 0.8316680999705568,
-   "iters": 1024,
-   "obj": 0.0,
-   "rel_p": 5.657469131102904e-07,
-   "rel_d": 3.504129624825145e-10,
-   "rel_gap": 2.994413192837939e-05,
+   "time": 1.418927999999596,
+   "setup": 1.9436530999996648,
+   "iters": 2240,
+   "obj": 0.1058,
+   "rel_p": 6.205972554918217e-12,
+   "rel_d": 4.4491850802814e-12,
+   "rel_gap": 7.642524787933261e-05,
    "device": "cuda+native",
-   "obj_err": 0.1058
+   "obj_err": 0.0
   },
   "time_limit": 300.0,
   "tol": 0.0001,
@@ -209,15 +274,28 @@
    "read": 3.7605663730000742,
    "obj_err": 0.0
   },
-  "samadhan_tight": {
-   "tol": 1e-05,
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
    "status": "optimal",
-   "time": 4.09,
-   "obj": 0.1058,
-   "obj_err": 3.2e-10,
-   "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
-  },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+   "time": 0.8280238999286667,
+   "setup": 0.8316680999705568,
+   "iters": 1024,
+   "obj": 0.0,
+   "rel_p": 5.657469131102904e-07,
+   "rel_d": 3.504129624825145e-10,
+   "rel_gap": 2.994413192837939e-05,
+   "device": "cuda+native",
+   "obj_err": 0.1058,
+   "tight_1e-5": {
+    "tol": 1e-05,
+    "status": "optimal",
+    "time": 4.09,
+    "obj": 0.1058,
+    "obj_err": 3.2e-10,
+    "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
+   },
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "physiciansched3-3",
@@ -230,14 +308,14 @@
    "time": 300.01444709999487
   },
   "samadhan": {
-   "status": "time_limit",
-   "time": 300.0340739999665,
-   "setup": 0.4737372000236064,
-   "iters": 445568,
-   "obj": 0.0,
-   "rel_p": 0.27816861622201355,
-   "rel_d": 0.5,
-   "rel_gap": 0.0,
+   "status": "optimal",
+   "time": 75.90789769999992,
+   "setup": 1.6754773000002388,
+   "iters": 308352,
+   "obj": 2429921.598617902,
+   "rel_p": 6.887135999150232e-05,
+   "rel_d": 2.4642272028264374e-05,
+   "rel_gap": 9.871125034877043e-05,
    "device": "cuda+native",
    "obj_err": null
   },
@@ -251,7 +329,20 @@
    "read": 2.324341942000501,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "time_limit",
+   "time": 300.0340739999665,
+   "setup": 0.4737372000236064,
+   "iters": 445568,
+   "obj": 0.0,
+   "rel_p": 0.27816861622201355,
+   "rel_d": 0.5,
+   "rel_gap": 0.0,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "qap15",
@@ -265,8 +356,8 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 0.48330320010427386,
-   "setup": 0.02716240007430315,
+   "time": 0.529388000000381,
+   "setup": 0.03549040000007153,
    "iters": 2624,
    "obj": 1041.023613225361,
    "rel_p": 9.813881560137593e-05,
@@ -285,7 +376,20 @@
    "read": 0.137089114000446,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 0.48330320010427386,
+   "setup": 0.02716240007430315,
+   "iters": 2624,
+   "obj": 1041.023613225361,
+   "rel_p": 9.813881560137593e-05,
+   "rel_d": 8.752981466718968e-06,
+   "rel_gap": 2.0400102620201952e-05,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "rmine15",
@@ -299,8 +403,8 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 21.488447100040503,
-   "setup": 0.4509265999076888,
+   "time": 21.771122899999682,
+   "setup": 0.812248499999896,
    "iters": 15168,
    "obj": -5042.15664978344,
    "rel_p": 9.867458082426557e-05,
@@ -319,7 +423,20 @@
    "read": 2.230064847999529,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 21.488447100040503,
+   "setup": 0.4509265999076888,
+   "iters": 15168,
+   "obj": -5042.15664978344,
+   "rel_p": 9.867458082426557e-05,
+   "rel_d": 0.0,
+   "rel_gap": 4.269558196893814e-05,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "s100",
@@ -333,13 +450,13 @@
   },
   "samadhan": {
    "status": "time_limit",
-   "time": 300.02453279995825,
-   "setup": 0.9096904000034556,
-   "iters": 220480,
-   "obj": -0.1702462700064763,
-   "rel_p": 4.2504798376596025e-07,
+   "time": 300.0374337999997,
+   "setup": 1.561215500000344,
+   "iters": 221696,
+   "obj": -0.170554243233979,
+   "rel_p": 3.0773237648815023e-07,
    "rel_d": 0.0,
-   "rel_gap": 0.0006512246201170042,
+   "rel_gap": 0.0004377370657348452,
    "device": "cuda+native",
    "obj_err": null
   },
@@ -353,7 +470,20 @@
    "read": 2.8990453870001147,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "time_limit",
+   "time": 300.02453279995825,
+   "setup": 0.9096904000034556,
+   "iters": 220480,
+   "obj": -0.1702462700064763,
+   "rel_p": 4.2504798376596025e-07,
+   "rel_d": 0.0,
+   "rel_gap": 0.0006512246201170042,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "s250r10",
@@ -367,15 +497,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 4.755706700030714,
-   "setup": 0.6947809000266716,
-   "iters": 7232,
-   "obj": -0.385564426069184,
-   "rel_p": 3.25940564435824e-06,
+   "time": 14.709710900000118,
+   "setup": 1.3512336999997387,
+   "iters": 29184,
+   "obj": -0.1755757328845475,
+   "rel_p": 8.373370501516811e-07,
    "rel_d": 0.0,
-   "rel_gap": 3.582677564781971e-05,
+   "rel_gap": 3.7763972654497e-05,
    "device": "cuda+native",
-   "obj_err": 0.21288738416370329
+   "obj_err": 0.0028986909790667814
   },
   "time_limit": 300.0,
   "tol": 0.0001,
@@ -387,15 +517,28 @@
    "read": 2.130803619999824,
    "obj_err": 9.829101757954928e-05
   },
-  "samadhan_tight": {
-   "tol": 1e-05,
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
    "status": "optimal",
-   "time": 76.16,
-   "obj": -0.17278087,
-   "obj_err": 0.0001,
-   "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
-  },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+   "time": 4.755706700030714,
+   "setup": 0.6947809000266716,
+   "iters": 7232,
+   "obj": -0.385564426069184,
+   "rel_p": 3.25940564435824e-06,
+   "rel_d": 0.0,
+   "rel_gap": 3.582677564781971e-05,
+   "device": "cuda+native",
+   "obj_err": 0.21288738416370329,
+   "tight_1e-5": {
+    "tol": 1e-05,
+    "status": "optimal",
+    "time": 76.16,
+    "obj": -0.17278087,
+    "obj_err": 0.0001,
+    "note": "rerun at the tighter tolerance after the main run (same session, AC); time includes setup"
+   },
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "savsched1",
@@ -409,13 +552,13 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 0.5519231000216678,
-   "setup": 0.897619100054726,
-   "iters": 576,
-   "obj": 217.41207071282582,
-   "rel_p": 2.3216501793076436e-06,
-   "rel_d": 1.1216132252230668e-06,
-   "rel_gap": 5.418314822084503e-05,
+   "time": 0.5357713999997031,
+   "setup": 2.964041900000211,
+   "iters": 768,
+   "obj": 217.40121449629805,
+   "rel_p": 2.0267032946454737e-06,
+   "rel_d": 2.832369309004066e-07,
+   "rel_gap": 3.377991545049942e-05,
    "device": "cuda+native",
    "obj_err": null
   },
@@ -429,7 +572,20 @@
    "read": 3.350915996999902,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 0.5519231000216678,
+   "setup": 0.897619100054726,
+   "iters": 576,
+   "obj": 217.41207071282582,
+   "rel_p": 2.3216501793076436e-06,
+   "rel_d": 1.1216132252230668e-06,
+   "rel_gap": 5.418314822084503e-05,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "supportcase10",
@@ -443,15 +599,15 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 6.05908829998225,
-   "setup": 0.24180560000240803,
-   "iters": 22016,
-   "obj": 3.3839223049838867,
-   "rel_p": 8.756553404887773e-08,
+   "time": 2.836042500000076,
+   "setup": 1.089168900000459,
+   "iters": 13376,
+   "obj": 3.3839311108616172,
+   "rel_p": 1.8480063868412434e-07,
    "rel_d": 0.0,
-   "rel_gap": 9.904974827261842e-05,
+   "rel_gap": 9.779735746855748e-05,
    "device": "cuda+native",
-   "obj_err": 4.0224137728252535e-07
+   "obj_err": 2.200027054087109e-06
   },
   "time_limit": 300.0,
   "tol": 0.0001,
@@ -463,7 +619,20 @@
    "read": 1.253667220999887,
    "obj_err": 2.0299327870783407e-05
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 6.05908829998225,
+   "setup": 0.24180560000240803,
+   "iters": 22016,
+   "obj": 3.3839223049838867,
+   "rel_p": 8.756553404887773e-08,
+   "rel_d": 0.0,
+   "rel_gap": 9.904974827261842e-05,
+   "device": "cuda+native",
+   "obj_err": 4.0224137728252535e-07,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  },
  {
   "name": "woodlands09",
@@ -477,13 +646,13 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 0.7096690000034869,
-   "setup": 1.0532918000826612,
-   "iters": 832,
+   "time": 0.9668504000001121,
+   "setup": 4.8806477000002815,
+   "iters": 1344,
    "obj": 0.0,
-   "rel_p": 6.421406100447265e-07,
+   "rel_p": 8.167932473963802e-07,
    "rel_d": 0.0,
-   "rel_gap": 3.474819466077662e-05,
+   "rel_gap": 9.001362027905495e-05,
    "device": "cuda+native",
    "obj_err": null
   },
@@ -497,6 +666,19 @@
    "read": 3.386204581000129,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed); 2026-10-11 23:17-00:26, AC, battery full; SAMADHAN on 46fc05c"
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 9260ab3, 2026-10-12 07:42-07:55; all on AC with a full battery",
+  "samadhan_no_presolve": {
+   "status": "optimal",
+   "time": 0.7096690000034869,
+   "setup": 1.0532918000826612,
+   "iters": 832,
+   "obj": 0.0,
+   "rel_p": 6.421406100447265e-07,
+   "rel_d": 0.0,
+   "rel_gap": 3.474819466077662e-05,
+   "device": "cuda+native",
+   "obj_err": null,
+   "note": "without presolve (46fc05c, 2026-10-11 23:17-00:26)"
+  }
  }
 ]

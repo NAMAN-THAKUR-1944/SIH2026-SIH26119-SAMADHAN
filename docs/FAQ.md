@@ -27,9 +27,10 @@ shown in the README. We do not claim parity with them on MILP.
 ### And with NVIDIA cuOpt, the other GPU solver?
 
 Measured on the same laptop GPU on 14 of Hans Mittelmann's LP benchmark instances (README, "LP — Mittelmann's
-instances"): cuOpt's PDLP is faster on 9 of them and accurate on all, SAMADHAN is faster on 5 but its 1e-4 answer
-is noticeably off on 2 of those, and both are far ahead of HiGHS. cuOpt is ahead of us on large LPs today; closing
-that gap (a presolve for the GPU engine, a stopping test that bounds the objective error) is on the roadmap.
+instances"): cuOpt's PDLP is faster on all 14. SAMADHAN solves 12 of them, with objectives within 0.3 % of the
+optimum, most within 6e-4; that took a presolve before the GPU engine, without which three answers passed the
+1e-4 test with a wrong objective. Both are far ahead of HiGHS on these models. cuOpt is ahead of us on large LPs
+today; a faster presolve, a stopping test that bounds the objective error and a better restart scheme are next.
 
 ### Where is SAMADHAN faster than HiGHS, and where slower?
 
