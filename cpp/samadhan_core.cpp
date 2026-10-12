@@ -11,7 +11,8 @@
 //          feasibility on unbounded columns.
 //   MILP : best-first branch-and-bound with plunging; children are warm-started from the parent basis
 //          (a bound change on a basic variable keeps the basis dual feasible, so no refactorisation);
-//          pseudocost branching; rounding heuristic; Gomory mixed-integer cuts at the root.
+//          pseudocost branching; rounding heuristic; Gomory mixed-integer cuts at the root; with several
+//          threads, a deterministic parallel tree search (rounds of fixed LP work, merged in thread order).
 //
 // C ABI (see samadhan/core.py):  sm_solve(...)  -> status, fills x and an info array.
 
@@ -19,12 +20,17 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <queue>
 #include <random>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -54,6 +60,7 @@ struct Options {
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
+    int threads = 1;             // branch-and-bound threads (the root and everything before it run on one)
     long max_lp_iter = 50000000;
 };
 
@@ -414,6 +421,7 @@ struct Simplex {
     std::vector<double> bval;
     Factor F;
     long iters = 0;
+    long work_extra = 0;                             // other work in iteration equivalents (factorisations, weights)
     int since_refactor = 0;
     double eta_work = 0.0;                           // update entries processed by the solves since the refactor
 
@@ -535,6 +543,7 @@ struct Simplex {
     void exact_weights(bool all) {
         for (int k = 0; k < m; ++k) {
             if (!all && w[k] >= 0.0) continue;
+            if (k % 3 == 0) ++work_extra;
             rho.assign(m, 0.0); rho[k] = 1.0;
             F.btran(rho);
             double s = 0.0;
@@ -563,6 +572,7 @@ struct Simplex {
     // unless the basis had to be repaired
     bool refactor_full() {
         bool repaired = false;
+        work_extra += 3;
         if (!reinvert(repaired)) {
             for (int j = 0; j < N; ++j) if (st[j] == BASIC) st[j] = AT_LB;      // last resort: slack basis
             for (int i = 0; i < m; ++i) { head[i] = n + i; st[n + i] = BASIC; }
@@ -1025,12 +1035,28 @@ struct Simplex {
 };
 
 // ---------------------------------------------------------------------------------------------- MILP
+struct BoundChange {
+    int var;
+    double lo, hi;
+};
+// Bound changes of the nodes in the parallel search: a chain of immutable blocks (one per branching or propagation
+// step) that all nodes below share; a node's bounds are the root bounds with the changes of its chain applied,
+// deeper ones winning. The reference counts are thread-safe, so a node can move between threads.
+struct BoundBlock {
+    mutable std::shared_ptr<const BoundBlock> parent;
+    std::vector<BoundChange> ch;
+    ~BoundBlock() {             // release a long chain in a loop (one destructor calling the next could overflow)
+        std::shared_ptr<const BoundBlock> p = std::move(parent);
+        while (p && p.use_count() == 1) p = std::move(p->parent);
+    }
+};
 struct Node {
     double bound;
     long id;
     int branch_var, dir;       // dir: -1 down, +1 up (for pseudocost update)
     double frac, parent_obj;
     int leaf = -1;                // last branching record on the path from the root (see Branch)
+    std::shared_ptr<const BoundBlock> chain;   // instead of leaf, in the parallel search
     std::vector<uint8_t> basis;   // warm start: 2-bit status of every column, packed 4 per byte
 
     void save(const std::vector<int8_t>& st) {
@@ -1063,6 +1089,59 @@ struct NodeHeap : std::priority_queue<Node*, std::vector<Node*>, NodeCmp> {
     void clear() {
         for (Node* p : c) delete p;
         c.clear();
+    }
+    std::vector<Node*> take() {         // empty the queue, handing over its nodes
+        std::vector<Node*> v;
+        v.swap(c);
+        return v;
+    }
+};
+
+// k threads that run job(w), w = 0..k-1, once per call of run(); w = 0 is the calling thread
+struct Crew {
+    std::vector<std::thread> th;
+    std::mutex mu;
+    std::condition_variable go, done;
+    std::function<void(int)> job;
+    long gen = 0;
+    int pending = 0;
+    bool quit = false;
+    explicit Crew(int k) {
+        for (int w = 1; w < k; ++w) th.emplace_back([this, w]() { loop(w); });
+    }
+    void loop(int w) {
+        long seen = 0;
+        for (;;) {
+            {
+                std::unique_lock<std::mutex> l(mu);
+                go.wait(l, [&]() { return quit || gen != seen; });
+                if (quit) return;
+                seen = gen;
+            }
+            job(w);
+            std::lock_guard<std::mutex> l(mu);
+            if (--pending == 0) done.notify_one();
+        }
+    }
+    void run(std::function<void(int)> f) {
+        {
+            std::lock_guard<std::mutex> l(mu);
+            job = std::move(f);
+            pending = (int)th.size();
+            ++gen;
+        }
+        go.notify_all();
+        job(0);
+        std::unique_lock<std::mutex> l(mu);
+        done.wait(l, [&]() { return pending == 0; });
+    }
+    ~Crew() {
+        {
+            std::lock_guard<std::mutex> l(mu);
+            quit = true;
+        }
+        go.notify_all();
+        for (auto& t : th) t.join();
     }
 };
 
@@ -1560,6 +1639,7 @@ struct Solver {
         sub.opt.features = opt.features & ~(128 | 8);   // a quick search: no nested RINS, no strong branching
         sub.opt.cut_rounds = 0;
         sub.opt.verbose = 0;
+        sub.opt.threads = 1;
         sub.inc = inc; sub.inc_obj = inc_obj;
         sub.warm_st = &S.st; sub.warm_head = &S.head;
         Info sinfo;
@@ -2590,6 +2670,12 @@ struct Solver {
             if (opt.features & 2) dive(dive_budget);
             if (opt.features & 128) rins(0.1 * opt.time_limit, 2000, S.objective());
         }
+        if (opt.threads > 1) {
+            long nodes = 0, iters = 0;
+            double gb = INF;
+            int status = parallel_tree(nodes, iters, gb);
+            return finish_tree(info, xout, status, nodes, iters, gb);
+        }
 
         // branch-and-bound with plunging
         NodeHeap heap;
@@ -2737,8 +2823,13 @@ struct Solver {
             if (have_node) gb = std::min(gb, cur_bound);
         }
         heap.clear();
+        return finish_tree(info, xout, status, nodes, S.iters, gb);
+    }
+
+    // result and statistics of the tree search; gb: best bound of the nodes still open (inf if none)
+    int finish_tree(Info& info, std::vector<double>& xout, int status, long nodes, long iters, double gb) {
         info.nodes = (double)nodes;
-        info.lp_iters = (double)S.iters;
+        info.lp_iters = (double)iters;
         info.time = seconds_since(t0);
         info.obj = inc_obj;
         info.bound = std::min(gb, inc_obj);
@@ -2749,12 +2840,280 @@ struct Solver {
         if (status == 4) return std::isfinite(inc_obj) ? 4 : 6;
         return std::isfinite(inc_obj) ? 0 : 1;
     }
+
+    // ---- parallel tree search (opt.threads > 1)
+    // The search runs in rounds. At the start of a round the best open nodes are dealt out to the threads, each of
+    // which works on its own copy of the solver (model with the root cuts, simplex, pseudocosts, incumbent,
+    // heuristics) and processes its nodes as the serial search does, best bound first and plunging into one child,
+    // until it has done a fixed amount of LP work; the node of the plunge it is in stays with it for the next round.
+    // At the end of the round the open nodes, incumbents and pseudocost observations of all threads are merged in
+    // thread order. A round ends after a number of simplex iterations, not after a time, so the search does not
+    // depend on how the threads are scheduled: a model gives the same tree on every run (up to the time-based
+    // heuristic budgets that the serial search has too).
+    struct TreeWork {
+        NodeHeap heap;                              // nodes dealt to this thread, and the children it creates
+        long nodes = 0, budget = 0, next_id = 0;
+        double bound = -INF;                        // global bound at the start of the round (RINS's gap test)
+        bool plunging = false;                      // the simplex holds a solved node, to go on with next round
+        double cur_bound = INF;                     // ... its bound
+        std::shared_ptr<const BoundBlock> chain;    // ... and its bound changes
+        bool time_up = false, numeric = false;
+        std::vector<double> cur_lb, cur_ub;
+        std::vector<char> seen;
+        std::vector<int> touched, changed;
+    };
+
+    // one thread's share of a round (runs on a worker copy of the solver)
+    void tree_round(TreeWork& R) {
+        const long it0 = S.iters + S.work_extra, nodes0 = R.nodes;
+        auto work = [&]() { return S.iters + S.work_extra - it0 + 10 * (R.nodes - nodes0); };
+        auto set_bound = [&](int j) {
+            if (!S.art[j] || std::isfinite(root_lb[j])) S.lb[j] = R.cur_lb[j];
+            if (!S.art[j] || std::isfinite(root_ub[j])) S.ub[j] = R.cur_ub[j];
+        };
+        auto extend = [&](std::vector<BoundChange> ch) {
+            auto b = std::make_shared<BoundBlock>();
+            b->parent = R.chain;
+            b->ch = std::move(ch);
+            return std::shared_ptr<const BoundBlock>(std::move(b));
+        };
+        // domain propagation after a bound change on bv; the tightened bounds become a block of the node's chain
+        auto propagate_node = [&](int bv, bool recompute) {
+            if (!(opt.features & 16) || bv < 0) return true;
+            R.changed.clear();
+            if (!propagate({bv}, R.cur_lb, R.cur_ub, R.changed)) return false;
+            std::sort(R.changed.begin(), R.changed.end());
+            R.changed.erase(std::unique(R.changed.begin(), R.changed.end()), R.changed.end());
+            if (R.changed.empty()) return true;
+            std::vector<BoundChange> ch;
+            bool moved = false;
+            for (int j : R.changed) {
+                ch.push_back({j, R.cur_lb[j], R.cur_ub[j]});
+                set_bound(j);
+                if (S.st[j] != BASIC) moved = true;
+            }
+            R.chain = extend(std::move(ch));
+            if (moved && recompute) S.compute_xB();
+            return true;
+        };
+        bool have_node = R.plunging;
+        double cur_bound = R.cur_bound;
+        for (;;) {
+            if (!have_node) {
+                if (work() >= R.budget) break;
+                Node* nd = nullptr;
+                while (!R.heap.empty()) {
+                    nd = R.heap.top(); R.heap.pop();
+                    if (nd->bound < cutoff()) break;
+                    delete nd; nd = nullptr;
+                }
+                if (!nd) break;
+                double popped_bound = nd->bound;
+                // the node's bounds: the root bounds, then the changes of its chain, deepest first
+                R.chain = nd->chain;
+                R.cur_lb = root_lb; R.cur_ub = root_ub;
+                for (const BoundBlock* b = R.chain.get(); b; b = b->parent.get())
+                    for (auto e = b->ch.rbegin(); e != b->ch.rend(); ++e) {
+                        if (R.seen[e->var]) continue;
+                        R.seen[e->var] = 1; R.touched.push_back(e->var);
+                        R.cur_lb[e->var] = e->lo; R.cur_ub[e->var] = e->hi;
+                    }
+                for (int j : R.touched) R.seen[j] = 0;
+                R.touched.clear();
+                for (int j = 0; j < M.n; ++j) set_bound(j);
+                nd->load(S.st, S.head);
+                S.w.assign(S.m, S.m <= 1000 ? -1.0 : 1.0);
+                int pc_var = nd->branch_var, pc_dir = nd->dir;
+                double pc_frac = nd->frac, pc_parent = nd->parent_obj;
+                delete nd;
+                if (!propagate_node(pc_var, false)) { ++R.nodes; continue; }
+                if (!S.refactor_full()) { R.numeric = true; break; }
+                Result rr = S.dual();
+                ++R.nodes;
+                if (rr == TIME_LIMIT) { R.time_up = true; cur_bound = popped_bound; have_node = true; break; }
+                if (rr != OPTIMAL) continue;
+                cur_bound = S.objective();
+                have_node = true;
+                if (pc_var >= 0) {
+                    int s = pc_dir < 0 ? 0 : 1;
+                    double dist = pc_dir < 0 ? pc_frac : 1 - pc_frac;
+                    pc_sum[s][pc_var] += std::max(0.0, cur_bound - pc_parent) / std::max(dist, 1e-6);
+                    pc_cnt[s][pc_var]++;
+                }
+            }
+            // the current node is solved and held in S
+            if (Clock::now() > S.t_end) { R.time_up = true; break; }
+            if (cur_bound >= cutoff()) { have_node = false; continue; }
+            if (work() >= R.budget) break;                   // the plunge goes on in the next round
+            int bv = (opt.features & 8) ? reliability_branch(cur_bound) : most_fractional_or_pc(cur_bound);
+            if (bv < 0) {
+                try_incumbent(std::vector<double>(S.x.begin(), S.x.begin() + M.n));
+                have_node = false;
+                continue;
+            }
+            const long nodes = R.nodes;
+            if ((nodes & 15) == 0) rounding_heuristic();
+            if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
+            if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 && rins_due())
+                rins(0.08 * opt.time_limit, 2000, std::min(R.bound, cur_bound));
+            if ((opt.features & 64) && nodes % (std::isfinite(inc_obj) ? 500 : 250) == 60)
+                fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
+            double v = S.x[bv], f = v - std::floor(v);
+            double dn = std::floor(v), up = std::ceil(v);
+            // plunge into the child with the smaller estimated degradation, keep the other one
+            double pd = pc_cnt[0][bv] ? pc_sum[0][bv] / pc_cnt[0][bv] : 1.0;
+            double pu = pc_cnt[1][bv] ? pc_sum[1][bv] / pc_cnt[1][bv] : 1.0;
+            int first = (pd * f < pu * (1 - f)) ? -1 : +1;
+            double olb = R.cur_lb[bv], oub = R.cur_ub[bv];
+            Node* other = new Node();
+            other->bound = cur_bound; other->id = R.next_id++;
+            other->branch_var = bv; other->dir = -first; other->frac = f; other->parent_obj = cur_bound;
+            other->chain = first < 0 ? extend({{bv, up, oub}}) : extend({{bv, olb, dn}});
+            other->save(S.st);
+            R.heap.push(other);
+            if (first < 0) { R.cur_ub[bv] = dn; S.ub[bv] = dn; R.chain = extend({{bv, olb, dn}}); }
+            else { R.cur_lb[bv] = up; S.lb[bv] = up; R.chain = extend({{bv, up, oub}}); }
+            if (!propagate_node(bv, true)) { ++R.nodes; have_node = false; continue; }
+            double parent = cur_bound;
+            Result rr = S.dual();
+            ++R.nodes;
+            if (rr == TIME_LIMIT) { R.time_up = true; cur_bound = parent; break; }
+            if (rr != OPTIMAL) { have_node = false; continue; }
+            cur_bound = S.objective();
+            int s = first < 0 ? 0 : 1;
+            pc_sum[s][bv] += std::max(0.0, cur_bound - parent) / std::max(first < 0 ? f : 1 - f, 1e-6);
+            pc_cnt[s][bv]++;
+        }
+        R.plunging = have_node && !R.numeric;
+        R.cur_bound = cur_bound;
+        if (!R.plunging) R.chain.reset();
+    }
+
+    int parallel_tree(long& nodes_out, long& iters_out, double& gb_out) {
+        const int K = std::max(2, std::min(opt.threads, 64));
+        NodeHeap pool;                                  // open nodes between rounds, best bound first
+        long next_id = 0;
+        Node* root = new Node();                        // the root, solved, as the first open node
+        root->bound = S.objective(); root->id = next_id++;
+        root->branch_var = -1; root->dir = 0; root->frac = 0.0; root->parent_obj = root->bound;
+        root->save(S.st);
+        pool.push(root);
+        std::vector<std::unique_ptr<Solver>> W;
+        std::vector<TreeWork> T(K);
+        for (int w = 0; w < K; ++w) {
+            W.emplace_back(new Solver(*this));
+            Solver& s = *W.back();
+            s.S.M = &s.M;
+            s.warm_st = nullptr; s.warm_head = nullptr;
+            s.opt.verbose = 0;
+            T[w].cur_lb = root_lb; T[w].cur_ub = root_ub;
+            T[w].seen.assign(M.n, 0);
+        }
+        const long base_iters = S.iters;
+        const long B = 4000;           // work per thread and round: simplex iterations (and equivalents) + 10 per node
+        auto global_bound = [&]() {
+            double gb = pool.empty() ? INF : pool.top()->bound;
+            for (auto& R : T) {
+                if (!R.heap.empty()) gb = std::min(gb, R.heap.top()->bound);
+                if (R.plunging) gb = std::min(gb, R.cur_bound);
+            }
+            return gb;
+        };
+        Crew crew(K);
+        int status = 0, rounds = 0;
+        long nodes = 0, last_print = 0;
+        double busy = 0.0, wall = 0.0;                  // thread-seconds of work, seconds of rounds
+        std::vector<double> busy_w(K, 0.0);
+        for (int round = 0;; ++round) {
+            // deal out the best open nodes, up to eight per thread, in turn
+            double cut = cutoff();
+            bool dealt_all = false;
+            for (int k = 0; k < 8 && !dealt_all; ++k)
+                for (int w = 0; w < K; ++w) {
+                    Node* nd = nullptr;
+                    while (!pool.empty()) {
+                        nd = pool.top(); pool.pop();
+                        if (nd->bound < cut) break;
+                        delete nd; nd = nullptr;
+                    }
+                    if (!nd) { dealt_all = true; break; }
+                    T[w].heap.push(nd);
+                }
+            bool work_left = false;
+            for (auto& R : T) work_left = work_left || !R.heap.empty() || R.plunging;
+            if (!work_left) break;                      // tree exhausted
+            double gb = std::min(global_bound(), inc_obj);
+            for (int w = 0; w < K; ++w) {
+                Solver& s = *W[w];
+                if (inc_obj < s.inc_obj) { s.inc_obj = inc_obj; s.inc = inc; }
+                for (int d = 0; d < 2; ++d) { s.pc_sum[d] = pc_sum[d]; s.pc_cnt[d] = pc_cnt[d]; }
+                T[w].budget = std::min(B, 250L << std::min(round, 8));   // short first rounds: spread the tree
+                T[w].bound = gb;
+                T[w].next_id = next_id;
+            }
+            auto r0 = Clock::now();
+            crew.run([&](int w) {
+                auto w0 = Clock::now();
+                W[w]->tree_round(T[w]);
+                busy_w[w] = seconds_since(w0);
+            });
+            wall += seconds_since(r0);
+            for (double b : busy_w) busy += b;
+            ++rounds;
+            // merge in thread order: open nodes, incumbents, pseudocost observations
+            nodes = 0;
+            bool time_up = false, numeric = false;
+            for (int w = 0; w < K; ++w) {
+                Solver& s = *W[w];
+                for (Node* nd : T[w].heap.take()) { nd->id = next_id++; pool.push(nd); }
+                if (s.inc_obj < inc_obj - 1e-9) {
+                    inc_obj = s.inc_obj; inc = s.inc;
+                    if (opt.verbose)
+                        std::printf("  incumbent %.10g  (thread %d, %.1fs)\n", inc_obj, w, seconds_since(t0));
+                }
+                nodes += T[w].nodes;
+                time_up = time_up || T[w].time_up;
+                numeric = numeric || T[w].numeric;
+            }
+            for (int d = 0; d < 2; ++d)
+                for (int j = 0; j < M.n; ++j) {
+                    double sum = pc_sum[d][j];
+                    int cnt = pc_cnt[d][j];
+                    for (int w = 0; w < K; ++w) {
+                        sum += W[w]->pc_sum[d][j] - pc_sum[d][j];
+                        cnt += W[w]->pc_cnt[d][j] - pc_cnt[d][j];
+                    }
+                    pc_sum[d][j] = sum; pc_cnt[d][j] = cnt;
+                }
+            if (numeric) { status = 5; break; }
+            if (time_up || Clock::now() > S.t_end) { status = 3; break; }
+            if (nodes >= opt.node_limit) { status = 4; break; }
+            if (opt.verbose && nodes - last_print >= 2000) {
+                last_print = nodes;
+                size_t open = pool.size();
+                for (auto& R : T) open += R.plunging;
+                std::printf("  nodes %8ld  open %7zu  incumbent %.10g  bound %.10g  %.1fs  (%d threads)\n", nodes,
+                            open, inc_obj, std::min(global_bound(), inc_obj), seconds_since(t0), K);
+            }
+        }
+        long iters = S.iters;
+        for (auto& s : W) iters += s->S.iters - base_iters;
+        if (opt.verbose)
+            std::printf("  parallel tree: %d threads, %d rounds, %.2f s, threads busy %.0f%% of it\n", K, rounds, wall,
+                        wall > 0 ? 100.0 * busy / (K * wall) : 0.0);
+        gb_out = status == 0 ? INF : global_bound();
+        pool.clear();
+        for (auto& R : T) R.heap.clear();
+        nodes_out = nodes;
+        iters_out = iters;
+        return status;
+    }
 };
 
 }  // namespace sm
 
 // ---------------------------------------------------------------------------------------------- C ABI
-// opts: [time_limit, node_limit, cut_rounds, verbose, gap, features (see Options)]
+// opts: [time_limit, node_limit, cut_rounds, verbose, gap, features (see Options), threads]
 // info: [obj, bound, gap, nodes, lp_iters, time, cuts, root_bound, root_bound_after_cuts]
 // return: 0 optimal, 1 infeasible, 2 unbounded, 3 time limit (with solution), 4 node limit (with solution),
 //         5 numerical failure, 6 limit reached without a feasible solution
@@ -2787,6 +3146,7 @@ SM_API int sm_solve(int n, int m, const int* colptr, const int* rowidx, const do
     s.opt.verbose = (int)opts[3];
     s.opt.gap = opts[4];
     s.opt.features = (int)opts[5];
+    s.opt.threads = (int)opts[6];
     sm::Info info;
     std::vector<double> x;
     int status = s.solve(info, x);

@@ -172,6 +172,20 @@ def test_core_milp_every_feature(features):
         assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9 and violation(lp, r.x) < 1e-6
 
 
+@pytest.mark.parametrize("threads", [2, 4])
+def test_core_parallel_tree_matches_highs_and_repeats(threads):
+    """The parallel tree search reaches the HiGHS optimum with a feasible point, and a second run with the same
+    thread count searches the same tree (same node and simplex iteration counts)."""
+    from samadhan.core import solve_core
+    from samadhan.crude import crude_schedule
+    from samadhan.verify import violation
+    models = [refinery_milp(R=4, C=8, P=3, D=6, seed=s) for s in (0, 1)] + [crude_schedule(V=2, K=3, U=2, T=8, seed=1)]
+    for lp in models:
+        a, b = (solve_core(lp, time_limit=60, threads=threads) for _ in range(2))
+        assert a.status == "optimal" and rel(a.obj, solve_highs(lp)["obj"]) < 1e-6 and violation(lp, a.x) < 1e-6
+        assert a.nodes > 0 and (a.nodes, a.lp_iters, a.obj) == (b.nodes, b.lp_iters, b.obj)
+
+
 @pytest.mark.parametrize("model", ["crude", "plan"])
 def test_mrpl_models_match_highs(model):
     """Small MRPL-shaped MILPs (crude scheduling at the marine terminal, refinery planning with crude cargoes and
@@ -228,7 +242,7 @@ def test_pulp_plugin_matches_highs():
             p += r
         return p
     a, b = build(), build()
-    sa, sb = a.solve(SAMADHAN(msg=False, timeLimit=30)), b.solve(pulp.HiGHS(msg=False))
+    sa, sb = a.solve(SAMADHAN(msg=False, timeLimit=30, threads=2)), b.solve(pulp.HiGHS(msg=False))
     assert sa.status == sb.status == pulp.LpSolveStatus.Optimal
     assert rel(pulp.value(a.objective), pulp.value(b.objective)) < 1e-9
     va, vb = {v.name: v.varValue for v in a.variables()}, {v.name: v.varValue for v in b.variables()}
@@ -254,7 +268,7 @@ def test_pyomo_plugin_matches_highs():
         m.window = pyo.Constraint(expr=(5, m.v["crude_murban"] + m.cargo, 40))
         return m
     a, b = build(), build()
-    ra = pyo.SolverFactory("samadhan").solve(a, timelimit=30)
+    ra = pyo.SolverFactory("samadhan").solve(a, timelimit=30, options={"threads": 2})
     pyo.SolverFactory("appsi_highs").solve(b)
     assert str(ra.solver.termination_condition) == "optimal"
     assert rel(pyo.value(a.obj), pyo.value(b.obj)) < 1e-9
@@ -622,8 +636,9 @@ def test_cli_demo_milp_models(capsys):
     assert main(["demo", "--model", "plan", "--size", "S", "--quiet"]) == 0
     out = capsys.readouterr().out
     assert "C++ core" in out and "optimal" in out
-    main(["demo", "--model", "crude", "--size", "S", "--time-limit", "2", "--quiet"])
-    assert "crude" in capsys.readouterr().out
+    main(["demo", "--model", "crude", "--size", "S", "--time-limit", "2", "--threads", "2", "--quiet"])
+    out = capsys.readouterr().out
+    assert "crude" in out and "2 threads" in out
     with pytest.raises(SystemExit):
         main(["demo", "--model", "crude", "--size", "XL"])
 

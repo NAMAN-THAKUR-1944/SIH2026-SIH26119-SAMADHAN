@@ -181,13 +181,22 @@ class CoreResult:
     root_bound_cuts: float
 
 
+def resolve_threads(threads):
+    """Thread count for the tree search: threads <= 0 means one per logical CPU."""
+    return max(1, int(threads)) if threads and threads > 0 else (os.cpu_count() or 1)
+
+
 def solve_core(lp: LP, integer=None, time_limit=300.0, node_limit=50_000_000, cut_rounds=8, gap=1e-6,
-               verbose=False, presolve=True, features=None) -> CoreResult:
-    """Solve an LP (dual simplex) or MILP (branch-and-cut) with the C++ core. Objective includes obj_const."""
+               verbose=False, presolve=True, features=None, threads=1) -> CoreResult:
+    """Solve an LP (dual simplex) or MILP (branch-and-cut) with the C++ core. Objective includes obj_const.
+    threads > 1: parallel tree search (deterministic: the same tree on every run with the same thread count);
+    threads=0: one thread per logical CPU."""
+    threads = resolve_threads(threads)
     if integer is not None:
         lp = replace(lp, integer=np.asarray(integer, bool))
     if not presolve:
-        return _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose, FEATURES if features is None else features)
+        return _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose,
+                           FEATURES if features is None else features, threads)
     from .presolve import presolve as run_presolve
     t0 = time.perf_counter()
     P = run_presolve(lp, probe_work=1e6 * time_limit, probe_seconds=max(1.0, 0.2 * time_limit))
@@ -200,7 +209,7 @@ def solve_core(lp: LP, integer=None, time_limit=300.0, node_limit=50_000_000, cu
         obj = P.lp.obj_const
         return CoreResult("optimal", P.postsolve(np.zeros(0)), obj, obj, 0.0, 0, 0, tp, 0, obj, obj)
     r = _solve_core(P.lp, max(time_limit - tp, 0.0), node_limit, cut_rounds, gap, verbose,
-                    FEATURES if features is None else features)
+                    FEATURES if features is None else features, threads)
     return replace(r, x=P.postsolve(r.x) if r.x is not None else None, time=r.time + tp)
 
 
@@ -233,12 +242,12 @@ def _result(st, lp, x, info):
                       info[2], int(info[3]), int(info[4]), info[5], int(info[6]), info[7] + k, info[8] + k)
 
 
-def _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose, features=FEATURES):
+def _solve_core(lp, time_limit, node_limit, cut_rounds, gap, verbose, features=FEATURES, threads=1):
     lib = _load()
     m, n = lp.K.shape
     a = _model_arrays(lp)
     isint = np.ascontiguousarray(np.zeros(n) if lp.integer is None else lp.integer, np.int8)
-    opts = np.array([time_limit, node_limit, cut_rounds, 1 if verbose else 0, gap, features], np.float64)
+    opts = np.array([time_limit, node_limit, cut_rounds, 1 if verbose else 0, gap, features, threads], np.float64)
     x, info = np.zeros(n), np.zeros(9)
     st = lib.sm_solve(n, m, *_model_args(a), isint.ctypes.data_as(ctypes.POINTER(ctypes.c_char)), _dp(opts),
                       _dp(x), _dp(info))

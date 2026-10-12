@@ -9,7 +9,8 @@
 The model is written with Pyomo's own MPS writer (symbolic labels), read by SAMADHAN's MPS reader and solved: LPs and
 MILPs by the C++ core (exact vertices, branch-and-cut); options engine="gpu" or "ipm" send an LP to the GPU engine or
 the interior-point method, both finished by crossover to an exact vertex. The values are loaded back into the model's
-variables by name. Options: timelimit (s), mip_gap (relative), engine, device.
+variables by name. Options: timelimit (s), mip_gap (relative), threads (MILP tree search; 0 = one per logical CPU),
+engine, device.
 """
 import math
 import os
@@ -75,7 +76,8 @@ class SamadhanSolver:
         if lp.integer is not None or engine == "core" or (engine == "auto" and lp.K.shape[1] <= 50_000):
             from .core import solve_core
             gap = opts.get("mip_gap")
-            r = solve_core(lp, time_limit=time_limit, verbose=tee, **({} if gap is None else dict(gap=float(gap))))
+            r = solve_core(lp, time_limit=time_limit, verbose=tee, threads=int(opts.get("threads", 1)),
+                           **({} if gap is None else dict(gap=float(gap))))
             return r.status, r.obj, r.bound, (r.x if r.x is not None and math.isfinite(r.obj) else None)
         if engine == "ipm":
             from .ipm import solve_ipm

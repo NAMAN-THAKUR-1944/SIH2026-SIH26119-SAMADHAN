@@ -53,11 +53,13 @@ def _ipm(lp, a):
 
 
 def _core(lp, a):
-    from .core import solve_core
-    r = solve_core(lp, time_limit=a.time_limit, verbose=not a.quiet, **({} if a.gap is None else dict(gap=a.gap)))
+    from .core import resolve_threads, solve_core
+    r = solve_core(lp, time_limit=a.time_limit, verbose=not a.quiet, threads=a.threads,
+                   **({} if a.gap is None else dict(gap=a.gap)))
+    threads = resolve_threads(a.threads) if lp.integer is not None and lp.integer.any() else 1
     print(f"\nstatus      {r.status}\nobjective   {lp.sense * r.obj:.10g}\nbound       {lp.sense * r.bound:.10g}\n"
           f"gap         {r.gap:.2e}   nodes {r.nodes}   simplex iterations {r.lp_iters}   cuts {r.cuts}\n"
-          f"time        {r.time:.2f} s (C++ core)")
+          f"time        {r.time:.2f} s (C++ core{f', {threads} threads' if threads > 1 else ''})")
     return r.status == "optimal"
 
 
@@ -89,6 +91,9 @@ def main(argv=None):
         p.add_argument("--time-limit", type=float, default=None, help="seconds (default 600; MILP demos 60)")
         p.add_argument("--gap", type=float, default=None,
                        help="C++ core, MILP: relative gap (default 1e-6; MILP demos and the benchmarks use 1e-4)")
+        p.add_argument("--threads", type=int, default=1,
+                       help="C++ core, MILP: branch-and-bound threads (default 1, 0 = one per logical CPU); the "
+                            "parallel search is deterministic: the same model and thread count give the same tree")
         p.add_argument("--quiet", action="store_true")
         p.add_argument("--crossover", action="store_true",
                        help="GPU engine, LP: turn the first-order solution into an exact optimal vertex (C++ simplex)")

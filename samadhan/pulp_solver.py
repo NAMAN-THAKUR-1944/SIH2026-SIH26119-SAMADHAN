@@ -76,7 +76,8 @@ def to_lp(prob, mip=True):
 
 class SAMADHAN(LpSolver):
     """SAMADHAN through PuLP. timeLimit in seconds; gapRel the relative MIP gap; engine "core", "gpu", "ipm" or
-    "auto" for LPs (MILPs always use the C++ core); device for the GPU engine ("cuda" or "cpu")."""
+    "auto" for LPs (MILPs always use the C++ core); device for the GPU engine ("cuda" or "cpu"); threads for the
+    MILP tree search (default 1, 0 = one per logical CPU)."""
 
     name = "SAMADHAN"
 
@@ -114,7 +115,7 @@ class SAMADHAN(LpSolver):
         if model.integer is not None or engine == "core" or (engine == "auto" and model.K.shape[1] <= 50_000):
             from .core import solve_core
             gap = self.optionsDict.get("gapRel")
-            r = solve_core(model, time_limit=time_limit, verbose=self.msg,
+            r = solve_core(model, time_limit=time_limit, verbose=self.msg, threads=self.optionsDict.get("threads", 1),
                            **({} if gap is None else dict(gap=float(gap))))
             x = r.x if r.x is not None and math.isfinite(r.obj) else None
             return x, STATUS.get(r.status, LpSolveStatus.Undefined), r.bound
