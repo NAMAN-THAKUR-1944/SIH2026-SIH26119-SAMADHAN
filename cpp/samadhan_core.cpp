@@ -2573,7 +2573,7 @@ struct Solver {
             if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
             if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 && rins_due())
                 rins(0.08 * opt.time_limit, 2000, global_bound());
-            if ((opt.features & 64) && !std::isfinite(inc_obj) && nodes % 250 == 60)
+            if ((opt.features & 64) && nodes % (std::isfinite(inc_obj) ? 500 : 250) == 60)
                 fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
             if (opt.verbose && (nodes % 2000) == 0) {
                 double gb = global_bound();
