@@ -14,8 +14,8 @@ HiGHS, CBC or SCIP code inside. It has three engines:
 * a **GPU engine for LP and convex QP**: restarted primal-dual hybrid gradient (PDLP / PDQP family), running
   entirely on the GPU on its own fused CUDA C++ kernels and CUDA graphs;
 * a **C++17 core for LP and MILP**: presolve, a sparse LU factorisation, primal and dual simplex (exact vertex
-  solutions) and branch-and-cut (reliability branching, node domain propagation, Gomory and c-MIR cuts,
-  feasibility pump and diving heuristics);
+  solutions) and branch-and-cut (reliability branching, node domain propagation, Gomory, c-MIR and flow cover
+  cuts, feasibility pump, diving, fix-and-propagate and RINS heuristics, a deterministic parallel tree search);
 * an **interior-point method for LP** (Mehrotra predictor-corrector, normal equations factorised by the core's
   sparse LDLᵀ).
 
@@ -46,8 +46,8 @@ below, and are stored in [`results/`](results).
 | **LP** | Refinery planning LP, 1.16 M variables | **6.0× faster** than HiGHS at 1e-6 (cost within 0.0001 %), **35×** at 1e-4 |
 | **LP** | 14 Mittelmann LPfeas instances against NVIDIA cuOpt (GPU, 1e-4) | cuOpt is faster on 13 of 14; SAMADHAN solves 12, its answers within 0.3 % of the optimum (most within 6e-4); HiGHS proves 5 of 14 in 300 s |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
-| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **43 proved optimal**, all correct, and a feasible solution on 63; 4 of them HiGHS could not finish (arki001, nw04, pk1, qiu); faster than HiGHS on 21; HiGHS proves 50 |
-| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 38; HiGHS proves 18 and finds a solution on all 50; on 6 models SAMADHAN's solution is the better one |
+| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **44 proved optimal**, all correct, and a feasible solution on 63; 4 of them HiGHS could not finish (arki001, nw04, pk1, qiu); faster than HiGHS on 21; HiGHS proves 50 |
+| **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 37; HiGHS proves 18 and finds a solution on all 50; on 6 models SAMADHAN's solution is the better one |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
 
@@ -251,7 +251,7 @@ compressed-MPS encoding, which none of the three solvers reads; they were left o
 
 ![MIPLIB](docs/img/miplib.png)
 
-All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 43
+All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 44
 optimal**, every one matching the known optimum, and finds a feasible solution on **63 of 65**; HiGHS proves 50.
 SAMADHAN finishes **nw04 (87,482 columns), pk1, qiu and arki001** where HiGHS runs out of time (and mas76 in some
 rounds: it needs about 60 s), and is faster than HiGHS on 21 of the models both prove, for example air03 (0.8 s vs
@@ -272,6 +272,7 @@ How it got here, each step measured on the same models:
 | + propagation through continuous columns in presolve | 65 | 44 | 63 | 15.3 s |
 | + RINS continues while it improves | 65 | 43 | 63 | 15.6 s |
 | + fix-and-propagate also in the tree | 65 | 43 | 63 | 15.5 s |
+| + flow cover cuts | 65 | 44 | 63 | 15.0 s |
 
 The Forrest–Tomlin update targets large LPs; on these small MILPs it is neutral (the counts are unchanged, single
 models move both ways as the search takes another path: l152lav 34 s → 8 s, misc07 17 s → 49 s). Since that change,
@@ -294,7 +295,15 @@ one session with and without it, 43 proved, 63 with a solution and a shifted geo
 latest round mas76 missed the minute again, and models whose search did not change took 1.07× their time of the
 round before. Running fix-and-propagate in the tree once an incumbent exists (every 500 nodes, also written for the
 crude scheduling model) newly proves arki001 (34 s; HiGHS does not finish it in 60 s), brings rout and set1ch to
-their optimum in the ablation run, and costs 10teams, which sits at the edge of the minute.
+their optimum in the ablation run, and costs 10teams, which sits at the edge of the minute. Flow cover cuts
+(simple generalised flow covers from single rows, Van Roy & Wolsey, with variable upper bounds x ≤ u·y as the arcs'
+switches) newly prove fixnet6, the classic fixed-charge network model (15 s; HiGHS 4.1 s; 5,182 before, optimum
+3,983), and speed up blend2 (10.0 s → 6.6 s), p0548 and pp08a; fiber takes 5.0 s instead of 2.3 s. Before they became
+a default they were compared with the previous defaults back to back on all 65 models: 44 against 43 proved, 63
+solutions with both, shifted geo-mean 14.9 s against 15.3 s, better incumbents on five of the unproved models (swath
+585 → 519, rout, mkc, 10teams, air05) and worse on four (p2756 3,198 → 3,356, set1ch, seymour, harp2). The cut
+was validated during development against a brute-force check on small random rows; two extended variants failed
+that check and were left out.
 
 The branch-and-cut work finds the first feasible solutions on 10teams, fixnet6, harp2, mkc, p2756 and set1ch,
 newly proves 10teams, pp08a and pp08aCUTS, and cuts solve times sharply on many models (gesa2 21 s → 0.9 s, vpm1
@@ -308,8 +317,10 @@ made things slower on average and are off by default.
 **MIPLIB 2017** (50 models of the current benchmark set, 60 s, one thread, gap 1e-4) is much harder, and here HiGHS
 is clearly ahead: it proves **18** optimal and finds a solution on all 50; SAMADHAN proves **5** (markshare_4_0,
 neos8, nw04, pk1, swath1, all correct; markshare_4_0, nw04 and pk1 are not proved by HiGHS in 60 s) and finds a
-solution on 38. On 6 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-662469, neos-957323,
-pk1, rmatr100-p10). RINS improves the incumbent on 14 of the 50 models and ends worse on 7, for example
+solution on 37. On 6 models SAMADHAN ends with the better solution (gen-ip054, mas74, neos-662469, neos-957323,
+pk1, rmatr100-p10). With flow cover cuts the incumbent improves on 9 models (beasleyC3 914 → 890, tr12-30
+136,588 → 132,452, p200x1188c 15,531 → 15,078) and gets worse on 10 (neos-860300 3,451 → 4,255, ran14x18-disj-8,
+glass4), and timtab1, which had a solution of 1.47 M in the previous round, ends the minute without one. RINS improves the incumbent on 14 of the 50 models and ends worse on 7, for example
 neos-860300 (5,419 → 4,342), timtab1 (1.07 M → 0.99 M) and p200x1188c (18,832 → 15,078, equal to HiGHS); swath3, where
 SAMADHAN was ahead, is now 0.4 % behind. Presolve, the gap measured on this set, now probes binaries, merges
 parallel rows and substitutes doubleton equations: it matches HiGHS's presolve on 30n20b8 (491 × 4,748 against
@@ -339,8 +350,8 @@ Two models built the way a coastal refinery like MRPL plans and schedules (`sama
 |---|---|---:|---:|---:|---|---|
 | Crude scheduling | S | 1,941 (882) | 0 / 3 of 3 | 1 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Crude scheduling | M | 5,385 (2,400) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
-| Crude scheduling | L | 14,262 (6,552) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
-| Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.0 s vs 5.9 s (median) |
+| Crude scheduling | L | 14,262 (6,552) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 2, HiGHS 1 | — |
+| Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.0 s vs 5.8 s (median) |
 | Refinery planning | M | 13,824 (144) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Refinery planning | L | 35,976 (192) | 0 / 2 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
 
@@ -374,21 +385,23 @@ medium seed 9 from 92,404 to 25,847. The schedule costs in the latest round, wit
 
 | Crude scheduling | Seed 7 | Seed 8 | Seed 9 | Before the propagation |
 |---|---:|---:|---:|---|
-| S | 4,270 (4,095, optimal) | 305 (115) | 290 (275) | 4,450 / 1,585 / 675 |
-| M | 27,483 (17,905) | 20,222 (9,722) | 25,847 (815) | 0.38 M / 0.62 M / 0.78 M |
-| L | 889,836 (647,923) | **830,736** (884,317) | 868,011 (738,807) | 374,541 / 910,373 / none |
+| S | 4,180 (4,095, optimal) | 200 (115) | 300 (275) | 4,450 / 1,585 / 675 |
+| M | 21,073 (17,905) | 18,720 (9,722) | 50,817 (815) | 0.38 M / 0.62 M / 0.78 M |
+| L | **263,407** (647,923) | **872,006** (884,317) | 887,077 (738,807) | 374,541 / 910,373 / none |
 
-HiGHS is still ahead on eight of the nine, far ahead on medium seed 9, where our bound stays weak (about 9, as on
-medium seed 8 and all large instances); there HiGHS's tree finds integral node solutions that ours does not. The
-small instances move by tens of units between runs (alone instead of six at a time: 4,135, 210 and 280).
+HiGHS is still ahead on seven of the nine, far ahead on medium seed 9, where our bound stays weak (about 9, as on
+medium seed 8 and all large instances); there HiGHS's tree finds integral node solutions that ours does not. Results
+within the minute move between rounds, because the heuristics' budgets are time-based: medium seed 9 ended at 25,847
+in the previous round and at 50,817 in this one, the small instances move by tens of units (alone instead of six at
+a time: 4,135, 210 and 280). The parallel tree search (below) helps most here.
 
 On the large instances SAMADHAN at first found no schedule at all, because the root LP did not finish: integer columns are not scaled (so that integrality is unchanged), and with this
 model's big-M coefficients (up to 499) that cost the dual simplex 12 (m + n) iterations instead of 0.9 (m + n) fully
 scaled. A root LP that has taken 1.5 (m + n) iterations now continues on a copy of the model with every column
 scaled, from the basis where it stopped, and hands the optimal basis back (scaling does not change which columns
 are basic); every MIPLIB 3 root LP and every other MRPL-shaped one needs at most 1.3 (m + n) iterations and keeps
-exactly its path. All three large instances now get a schedule, one cheaper than HiGHS's; seed 7 ended at 374,541
-in the previous round and at 889,836 in this one, a reminder that results within a minute move with the timing of
+exactly its path. All three large instances now get a schedule, two of them cheaper than HiGHS's; seed 7 has ended
+at 374,541, 889,836 and now 263,407 in three rounds, a reminder that results within a minute move with the timing of
 the heuristics.
 
 ### QP — Maros–Meszaros and refinery QP
@@ -424,15 +437,15 @@ holding and shortage), GPU, 1e-6 relative KKT. HiGHS's QP solver is an active-se
   has not been crossed over yet (roadmap).
 * The interior-point method factorises A Θ Aᵀ directly: models with dense columns (fit2p) are slow, as there is
   no dense-column splitting yet.
-* On the crude scheduling MILP (MRPL marine terminal) HiGHS still finds cheaper schedules within 60 s on eight of
-  nine instances: 1.0–2.7× cheaper on the small ones, 1.5–2.1× on two medium ones and 32× on the third, whose LP
-  bound stays weak after our presolve; on the large ones SAMADHAN's schedules are within 1.4× of HiGHS's and one
-  is cheaper. There is no local branching yet.
+* On the crude scheduling MILP (MRPL marine terminal) HiGHS still finds cheaper schedules within 60 s on seven of
+  nine instances with one thread each: 1.0–1.7× cheaper on the small ones, 1.2–1.9× on two medium ones and 62× on
+  the third, whose LP bound stays weak after our presolve; on the large ones SAMADHAN's schedules are cheaper on
+  two (one 2.5× cheaper) and 1.2× dearer on the third. There is no local branching yet.
 * Presolve has the standard primal reductions, dual fixing, parallel rows, doubleton substitution and probing,
   but no clique table or enumeration of small rows yet (HiGHS's presolve removes all of ex9 that way), and no
   dominated or duplicate columns or coefficient strengthening. The branch-and-cut root bound is still weaker than
-  HiGHS's on some models (no lifted cover or multi-row flow-cover cuts: p2756, fixnet6), and strong branching
-  costs time on models with very cheap LPs (misc07). One thread.
+  HiGHS's on some models (no lifted cover cuts or multi-row flow covers yet: p2756), and strong branching costs
+  time on models with very cheap LPs (misc07).
 
 ## Install without Docker
 
@@ -441,7 +454,7 @@ python -m venv .venv
 .venv/Scripts/pip install torch --index-url https://download.pytorch.org/whl/cu128   # or /whl/cpu
 .venv/Scripts/pip install -r requirements.txt
 .venv/Scripts/python -m samadhan verify                         # self-check of every engine, ~10 s
-.venv/Scripts/python -m pytest                                  # 71 correctness tests, ~45 s
+.venv/Scripts/python -m pytest                                  # 77 correctness tests, ~65 s
 .venv/Scripts/python -m samadhan demo --size XL --tol 1e-6      # 1.16M-variable refinery LP on the GPU
 .venv/Scripts/python -m samadhan solve model.mps                # engine picked from the model
 .venv/Scripts/python -m samadhan solve model.mps --engine core  # force the C++ dual simplex / branch-and-cut
@@ -584,7 +597,10 @@ examples/            a crude-selection MILP written in PuLP and solved by SAMADH
   variable keeps the basis dual feasible); other nodes store a 2-bit-per-column basis for a warm restart.
   Root cuts: Gomory mixed-integer cuts from the tableau and aggregated c-MIR cuts (Marchand & Wolsey: up to six
   rows combined to eliminate continuous columns, variable upper bounds x ≤ u·y substituted, the best of several
-  scalings rounded); knapsack cover cuts are available, off by default. Primal heuristics:
+  scalings rounded) and flow cover cuts (simple generalised flow covers of single rows, Van Roy & Wolsey: binary
+  and variable-upper-bound columns as switched arcs, the cover chosen greedily by the LP point, outflow arcs taken
+  with their switch, the L₂ set, where that cuts deeper);
+  knapsack cover cuts are available, off by default. Primal heuristics:
   rounding, a feasibility pump (objective variant, with cycle flips and perturbation) at the root,
   fix-and-propagate (integer columns fixed one by one with propagation over all bounds, completed by one LP), and
   fractional / guided diving at the root and periodically in the tree, all within 10 % of the time limit; RINS
