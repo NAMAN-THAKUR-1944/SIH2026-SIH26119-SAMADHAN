@@ -1309,7 +1309,10 @@ struct Solver {
         for (int i = 0; i < m_orig; ++i) {
             double s = 0.0;
             for (auto& e : rowsR[i]) s += e.second * xs[e.first];
-            double sc = 1.0 + std::max(std::fabs(M.rlo[i] == -INF ? 0 : M.rlo[i]), std::fabs(M.rhi[i] == INF ? 0 : M.rhi[i]));
+            // tolerance 1e-6 (1 + |rhs|) in the units of the row as given: scaled row i is rowscale[i] times it, so
+            // a row scaled far down could otherwise hide a large violation (enigma: 1.0 passed as 1e-6)
+            double rs = i < (int)rowscale.size() ? rowscale[i] : 1.0;
+            double sc = rs + std::max(std::fabs(M.rlo[i] == -INF ? 0 : M.rlo[i]), std::fabs(M.rhi[i] == INF ? 0 : M.rhi[i]));
             if (s < M.rlo[i] - 1e-6 * sc || s > M.rhi[i] + 1e-6 * sc) return false;
         }
         return true;
@@ -1641,6 +1644,7 @@ struct Solver {
         sub.opt.verbose = 0;
         sub.opt.threads = 1;
         sub.inc = inc; sub.inc_obj = inc_obj;
+        sub.rowscale = rowscale;                  // its rows are ours, scaled: same feasibility test
         sub.warm_st = &S.st; sub.warm_head = &S.head;
         Info sinfo;
         std::vector<double> sx;

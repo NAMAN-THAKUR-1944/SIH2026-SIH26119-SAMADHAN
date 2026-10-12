@@ -12,6 +12,7 @@ import argparse
 import glob
 import gzip
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -39,6 +40,7 @@ def run_one(path, time_limit, gap, highs_prev=None):
 
     from samadhan.core import solve_core
     from samadhan.mps import read_mps
+    from samadhan.verify import violation
 
     name = os.path.basename(path).split(".")[0]
     out = dict(name=name)
@@ -72,7 +74,8 @@ def run_one(path, time_limit, gap, highs_prev=None):
                                 bound=info.mip_dual_bound, gap=info.mip_gap, nodes=int(info.mip_node_count), time=ht)
         r = solve_core(lp, time_limit=time_limit, gap=gap)
         out["samadhan"] = dict(status=r.status, obj=r.obj, bound=r.bound, gap=r.gap, nodes=r.nodes,
-                               lp_iters=r.lp_iters, time=r.time, cuts=r.cuts)
+                               lp_iters=r.lp_iters, time=r.time, cuts=r.cuts,
+                               viol=violation(lp, r.x) if r.x is not None and math.isfinite(r.obj) else None)
         if out["highs"]["status"] == "Optimal" and r.x is not None:
             ref = out["highs"]["obj"]
             out["obj_rel_diff"] = abs(r.obj - ref) / max(1.0, abs(ref))
@@ -114,7 +117,9 @@ def main():
     opt = [r for r in ran if r["samadhan"]["status"] == "optimal"]
     ok = [r for r in opt if r.get("obj_rel_diff", 1) <= 1e-4]
     hopt = [r for r in ran if r["highs"]["status"] == "Optimal"]
-    print(f"\nran {len(ran)}: SAMADHAN proved optimal {len(opt)} ({len(ok)} matching HiGHS), HiGHS {len(hopt)}")
+    bad = [r["name"] for r in ran if (r["samadhan"].get("viol") or 0) > 1e-6]
+    print(f"\nran {len(ran)}: SAMADHAN proved optimal {len(opt)} ({len(ok)} matching HiGHS), HiGHS {len(hopt)}; "
+          f"solutions violating a row, bound or integrality by more than 1e-6: {bad or 'none'}")
 
 
 if __name__ == "__main__":

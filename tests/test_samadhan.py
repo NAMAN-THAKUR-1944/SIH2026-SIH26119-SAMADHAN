@@ -289,6 +289,19 @@ def test_mps_objsense_max(tmp_path):
     assert r.status == "optimal" and lp.sense * r.obj == pytest.approx(11.0)       # x = 3, y = 1
 
 
+def test_core_rejects_points_hidden_by_row_scaling(tmp_path):
+    """1e6 x - 1e6 y = 1 has no binary solution. Scaling divides the row by about 2^20, after which the rounded
+    point (0, 0) misses it by only 1e-6; incumbents must be checked in the row's own units (MIPLIB 3 enigma)."""
+    from samadhan.core import solve_core
+    f = tmp_path / "badscale.mps"
+    f.write_text("NAME badscale\nROWS\n N obj\n E c1\nCOLUMNS\n    MARKER 'MARKER' 'INTORG'\n    x obj 1 c1 1000000\n"
+                 "    y obj 1 c1 -1000000\n    MARKER 'MARKER' 'INTEND'\nRHS\n    RHS c1 1\nBOUNDS\n UP BND x 1\n"
+                 " UP BND y 1\nENDATA\n")
+    lp = read_mps(f)
+    assert lp.integer is not None and lp.integer.all()
+    assert solve_core(lp, time_limit=10, presolve=False).status == "infeasible"
+
+
 def test_core_milp_without_cuts():
     from samadhan.core import solve_core
     lp = refinery_milp(seed=1)
