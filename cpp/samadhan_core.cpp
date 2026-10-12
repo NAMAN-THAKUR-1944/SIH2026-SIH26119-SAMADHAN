@@ -3106,8 +3106,10 @@ struct Solver {
             std::printf("  parallel tree: %d threads, %d rounds, %.2f s, threads busy %.0f%% of it\n", K, rounds, wall,
                         wall > 0 ? 100.0 * busy / (K * wall) : 0.0);
         gb_out = status == 0 ? INF : global_bound();
-        pool.clear();
-        for (auto& R : T) R.heap.clear();
+        // free the open nodes on all threads (millions of them on some models: a second on one thread)
+        std::vector<Node*> left = pool.take();
+        for (auto& R : T) for (Node* nd : R.heap.take()) left.push_back(nd);
+        crew.run([&](int w) { for (size_t i = w; i < left.size(); i += K) delete left[i]; });
         nodes_out = nodes;
         iters_out = iters;
         return status;
