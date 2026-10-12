@@ -150,19 +150,21 @@ def _parallel_rows(S):
     hp = np.round(np.bincount(rowid, weights=w1[S.indices], minlength=m), 9)
     hv = np.round(np.bincount(rowid, weights=scaled * w2[S.indices], minlength=m), 7)
     order = cand[np.lexsort((hv[cand], hp[cand], cnt[cand]))]
+    # groups of equal (count, pattern hash, value hash), found in one vectorised pass; only groups of two or more
+    # rows are checked entry by entry
+    c_o, p_o, v_o = cnt[order], hp[order], hv[order]
+    new = np.ones(len(order), bool)
+    new[1:] = (c_o[1:] != c_o[:-1]) | (p_o[1:] != p_o[:-1]) | (v_o[1:] != v_o[:-1])
+    starts = np.flatnonzero(new)
+    ends = np.append(starts[1:], len(order))
     pairs = []
-    start = 0
-    for t in range(1, len(order) + 1):
-        if t < len(order) and cnt[order[t]] == cnt[order[start]] and hp[order[t]] == hp[order[start]]                 and hv[order[t]] == hv[order[start]]:
-            continue
-        if t - start > 1:
-            head = order[start]
-            hi_, hv_ = S.indices[S.indptr[head]:S.indptr[head + 1]], scaled[S.indptr[head]:S.indptr[head + 1]]
-            for k in order[start + 1:t]:
-                ki, kv = S.indices[S.indptr[k]:S.indptr[k + 1]], scaled[S.indptr[k]:S.indptr[k + 1]]
-                if np.array_equal(ki, hi_) and np.allclose(kv, hv_, rtol=1e-12, atol=0.0):
-                    pairs.append((int(head), int(k), float(first[k] / first[head])))
-        start = t
+    for g in np.flatnonzero(ends - starts > 1):
+        head = order[starts[g]]
+        hi_, hv_ = S.indices[S.indptr[head]:S.indptr[head + 1]], scaled[S.indptr[head]:S.indptr[head + 1]]
+        for k in order[starts[g] + 1:ends[g]]:
+            ki, kv = S.indices[S.indptr[k]:S.indptr[k + 1]], scaled[S.indptr[k]:S.indptr[k + 1]]
+            if np.array_equal(ki, hi_) and np.allclose(kv, hv_, rtol=1e-12, atol=0.0):
+                pairs.append((int(head), int(k), float(first[k] / first[head])))
     return pairs
 
 
@@ -271,87 +273,93 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
                 continue
         # free column singletons: a continuous column that appears only in one equality row, whose other terms
         # already imply its bounds, is substituted out together with the row:  x_k = (b - sum_j a_j x_j) / a_k
+        # The tests are vectorised over all candidates; of several in one row the first that passes is taken (a
+        # substitution changes no other row's activity, so the result equals a column-by-column pass).
         Scsc = S.tocsc()
         ccnt1 = np.diff(Scsc.indptr)
         cand = np.flatnonzero((ccnt1 == 1) & ~isint[cols])
-        done_rows = set()
-        subs = 0
-        for kl in cand:
-            p0 = Scsc.indptr[kl]
-            il, a = int(Scsc.indices[p0]), float(Scsc.data[p0])
-            i = int(rows[il])
-            if not np.isfinite(hi[i]) or not row_on[i] or il in done_rows or abs(a) < 1e-9:
-                continue
-            k = int(cols[kl])
-            lk, uk = l[k], u[k]
-            cmin = a * lk if a > 0 else a * uk
-            cmax = a * uk if a > 0 else a * lk
-            rmin_ok = mn_inf[il] - (0 if np.isfinite(cmin) else 1) == 0
-            rmax_ok = mx_inf[il] - (0 if np.isfinite(cmax) else 1) == 0
-            rest_min = mn[il] - (cmin if np.isfinite(cmin) else 0.0) if rmin_ok else -np.inf
-            rest_max = mx[il] - (cmax if np.isfinite(cmax) else 0.0) if rmax_ok else np.inf
-            b = lo[i]
-            lo_imp, hi_imp = (b - rest_max) / a, (b - rest_min) / a
-            if a < 0:
-                lo_imp, hi_imp = hi_imp, lo_imp
-            tol = 1e-9 * (1.0 + abs(b))
-            if not (lo_imp >= lk - tol and hi_imp <= uk + tol):
-                continue                                         # the column's own bounds still matter
+        sel = np.zeros(0, int)
+        if len(cand):
+            p0 = Scsc.indptr[cand]
+            il_c, a_c = Scsc.indices[p0], Scsc.data[p0]
+            i_c, k_c = rows[il_c], cols[cand]
+            lk, uk = l[k_c], u[k_c]
+            with np.errstate(invalid="ignore", over="ignore"):
+                cmin = np.where(a_c > 0, a_c * lk, a_c * uk)
+                cmax = np.where(a_c > 0, a_c * uk, a_c * lk)
+                fmin, fmax = np.isfinite(cmin), np.isfinite(cmax)
+                rest_min = np.where(mn_inf[il_c] - ~fmin == 0, mn[il_c] - np.where(fmin, cmin, 0.0), -np.inf)
+                rest_max = np.where(mx_inf[il_c] - ~fmax == 0, mx[il_c] - np.where(fmax, cmax, 0.0), np.inf)
+                b_c = lo[i_c]
+                lo_imp, hi_imp = (b_c - rest_max) / a_c, (b_c - rest_min) / a_c
+                lo_imp, hi_imp = np.where(a_c < 0, hi_imp, lo_imp), np.where(a_c < 0, lo_imp, hi_imp)
+                tol = 1e-9 * (1.0 + np.abs(b_c))
+                ok = np.isfinite(hi[i_c]) & row_on[i_c] & (np.abs(a_c) >= 1e-9) & \
+                    (lo_imp >= lk - tol) & (hi_imp <= uk + tol)       # else the column's own bounds still matter
+            sel = np.flatnonzero(ok)
+            sel = sel[np.sort(np.unique(il_c[sel], return_index=True)[1])]
+        for t in sel:
+            k, il, a, i, b = int(k_c[t]), int(il_c[t]), float(a_c[t]), int(i_c[t]), float(b_c[t])
             r0, r1 = S.indptr[il], S.indptr[il + 1]
-            others = [(int(cols[jl]), float(v)) for jl, v in zip(S.indices[r0:r1], S.data[r0:r1]) if jl != kl]
-            ocols = np.array([j for j, _ in others], int)
-            ocoef = np.array([v for _, v in others], float)
+            mask = S.indices[r0:r1] != cand[t]
+            ocols = cols[S.indices[r0:r1][mask]]
+            ocoef = S.data[r0:r1][mask].astype(float)
             if c[k] != 0.0:
                 c[ocols] -= c[k] * ocoef / a
                 const += c[k] * b / a
             stack.append((k, b, ocols, ocoef, a))
             col_on[k] = False
             row_on[i] = False
-            done_rows.add(il)
-            subs += 1
-        if subs:
-            st["free_singletons"] += subs; changed = True
+        if len(sel):
+            st["free_singletons"] += len(sel); changed = True
             continue
         # doubleton equations: a_j x_j + a_k x_k = b with x_k continuous -> x_k = (b - a_j x_j) / a_k everywhere
         dbl = np.flatnonzero((cnt == 2) & np.isfinite(hi[rows]))
         if len(dbl):
-            used = np.zeros(n, bool)
-            ks, js, bs, ajs, aks = [], [], [], [], []
-            for il in dbl:
-                i = rows[il]
-                if not row_on[i]:
-                    continue
-                p0 = S.indptr[il]
-                (j1, j2), (v1, v2) = cols[S.indices[p0:p0 + 2]], S.data[p0:p0 + 2]
+            # one row at a time in row order (a row is skipped once one of its columns is used), on plain Python
+            # lists: this loop runs once per doubleton (56,234 on woodlands09)
+            p0 = S.indptr[dbl]
+            J1, J2 = cols[S.indices[p0]].tolist(), cols[S.indices[p0 + 1]].tolist()
+            V1, V2 = S.data[p0].tolist(), S.data[p0 + 1].tolist()
+            I = rows[dbl].tolist()
+            B = lo[rows[dbl]].tolist()
+            isint_l, L, U = isint.tolist(), l.tolist(), u.tolist()
+            used = bytearray(n)
+            ks, js, bs, ajs, aks, rows_done = [], [], [], [], [], []
+            for t in range(len(I)):
+                j1, j2, v1, v2 = J1[t], J2[t], V1[t], V2[t]
                 if used[j1] or used[j2] or v1 == 0.0 or v2 == 0.0:
                     continue
                 # x_k: a continuous column, the one with the larger coefficient (smaller multiplier)
-                opts = [(k, ak, j, aj) for k, ak, j, aj in ((j2, v2, j1, v1), (j1, v1, j2, v2)) if not isint[k]]
+                opts = [(k, ak, j, aj) for k, ak, j, aj in ((j2, v2, j1, v1), (j1, v1, j2, v2)) if not isint_l[k]]
                 if not opts:
                     continue
                 k, ak, j, aj = max(opts, key=lambda o: abs(o[1]))
                 if abs(aj / ak) > 1e3:
                     continue
-                b, ak, aj = float(lo[i]), float(ak), float(aj)
-                # x_k in [l_k, u_k]  <=>  a_j x_j in [b - a_k u_k, b - a_k l_k]  (ends swapped if a_k < 0);
-                # plain floats here: this loop runs once per doubleton (56,234 on woodlands09)
-                e1, e2 = b - ak * float(u[k]), b - ak * float(l[k])
+                b = B[t]
+                # x_k in [l_k, u_k]  <=>  a_j x_j in [b - a_k u_k, b - a_k l_k]  (ends swapped if a_k < 0)
+                e1, e2 = b - ak * U[k], b - ak * L[k]
                 ylo, yhi = (e1, e2) if ak > 0 else (e2, e1)
                 nl, nu = (ylo / aj, yhi / aj) if aj > 0 else (yhi / aj, ylo / aj)
                 nl = -math.inf if nl != nl else nl        # inf - inf: no bound
                 nu = math.inf if nu != nu else nu
-                if isint[j]:
+                if isint_l[j]:
                     if math.isfinite(nl):
                         nl = float(math.ceil(nl - INT_TOL * max(1.0, abs(nl))))
                     if math.isfinite(nu):
                         nu = float(math.floor(nu + INT_TOL * max(1.0, abs(nu))))
-                nl, nu = max(float(l[j]), nl), min(float(u[j]), nu)
-                if np.isfinite(nl) and np.isfinite(nu) and nl - nu > FEAS_TOL * (1.0 + abs(nl)):
+                nl, nu = max(L[j], nl), min(U[j], nu)
+                if math.isfinite(nl) and math.isfinite(nu) and nl - nu > FEAS_TOL * (1.0 + abs(nl)):
                     return fail("infeasible")
-                l[j], u[j] = nl, max(nl, nu)
-                used[j] = used[k] = True
-                ks.append(k); js.append(j); bs.append(b); ajs.append(aj); aks.append(ak)
-                row_on[i] = False
+                L[j], U[j] = nl, max(nl, nu)
+                used[j] = used[k] = 1
+                ks.append(k); js.append(j); bs.append(b); ajs.append(aj); aks.append(ak); rows_done.append(I[t])
+            if js:
+                ja = np.array(js)
+                l[ja] = [L[j] for j in js]
+                u[ja] = [U[j] for j in js]
+                row_on[np.array(rows_done)] = False
             if ks:
                 ks, js = np.array(ks), np.array(js)
                 bs, ajs, aks = np.array(bs), np.array(ajs), np.array(aks)
