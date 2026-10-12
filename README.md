@@ -46,7 +46,7 @@ below, and are stored in [`results/`](results).
 | **LP** | Refinery planning LP, 1.16 M variables | **6.0× faster** than HiGHS at 1e-6 (cost within 0.0001 %), **35×** at 1e-4 |
 | **LP** | 14 Mittelmann LPfeas instances against NVIDIA cuOpt (GPU, 1e-4) | cuOpt is faster on 13 of 14; SAMADHAN solves 12, its answers within 0.3 % of the optimum (most within 6e-4); HiGHS proves 5 of 14 in 300 s |
 | **LP** | Netlib (91 models) | C++ simplex: **91/91 solved** to exact vertices (all within 1e-9 of HiGHS); interior point + crossover: 89/91; GPU engine: 86 to 1e-4; MPS reader identical to HiGHS on 91/91 |
-| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **44 proved optimal**, all correct, and a feasible solution on 63; 4 of them HiGHS could not finish (mas76, nw04, pk1, qiu); faster than HiGHS on 19; HiGHS proves 50 |
+| **MILP** | MIPLIB 3 (all 65 models, 60 s) | **43 proved optimal**, all correct, and a feasible solution on 63; 3 of them HiGHS could not finish (nw04, pk1, qiu); faster than HiGHS on 18; HiGHS proves 50 |
 | **MILP** | MIPLIB 2017 (50 benchmark-set models, 60 s) | 5 proved optimal, all correct, and a feasible solution on 38; HiGHS proves 18 and finds a solution on all 50; on 7 models SAMADHAN's solution is the better one |
 | **QP** | Maros–Meszaros (129 convex QPs, 60 s) | **79 solved** to 1e-6 relative KKT (HiGHS 99); all 64 solved by both agree; 15 only SAMADHAN solves |
 | **QP** | Refinery QP (convex cost curves) | 13k vars: 78× faster than the HiGHS QP solver; from 110k vars HiGHS does not finish in 600 s, SAMADHAN takes 1.5 s |
@@ -251,12 +251,12 @@ compressed-MPS encoding, which none of the three solvers reads; they were left o
 
 ![MIPLIB](docs/img/miplib.png)
 
-All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 44
+All 65 MIPLIB 3 models (up to 6,805 rows), 60 s each, one thread each, relative gap 1e-4. **SAMADHAN proves 43
 optimal**, every one matching the known optimum, and finds a feasible solution on **63 of 65**; HiGHS proves 50.
-SAMADHAN finishes **nw04 (87,482 columns), pk1, qiu and mas76** where HiGHS runs out of time (mas76 only just, in
-59.7 s), and is faster than HiGHS on 19 of the models both prove, for example air03 (0.8 s vs 2.8 s), gesa3
-(1.1 s vs 3.4 s), cap6000 (0.5 s vs 2.0 s), mod008 (0.2 s vs 1.2 s), mitre (1.2 s vs 3.0 s) and rentacar (2.9 s vs
-10.4 s).
+SAMADHAN finishes **nw04 (87,482 columns), pk1 and qiu** where HiGHS runs out of time (and mas76 in some rounds: it
+needs about 60 s), and is faster than HiGHS on 18 of the models both prove, for example air03 (0.9 s vs 2.8 s),
+gesa3 (0.9 s vs 3.4 s), cap6000 (0.5 s vs 2.0 s), mod008 (0.2 s vs 1.2 s), mitre (1.5 s vs 3.0 s) and rentacar
+(3.0 s vs 10.4 s).
 
 How it got here, each step measured on the same models:
 
@@ -271,6 +271,7 @@ How it got here, each step measured on the same models:
 | + fix-and-propagate heuristic | 65 | 42 | 63 | 15.8 s |
 | + RINS improvement heuristic | 65 | 43 | 63 | 15.8 s |
 | + propagation through continuous columns in presolve | 65 | 44 | 63 | 15.3 s |
+| + RINS continues while it improves | 65 | 43 | 63 | 15.6 s |
 
 The Forrest–Tomlin update targets large LPs; on these small MILPs it is neutral (the counts are unchanged, single
 models move both ways as the search takes another path: l152lav 34 s → 8 s, misc07 17 s → 49 s). Since that change,
@@ -288,6 +289,10 @@ through continuous columns (written for the crude scheduling model below) change
 (59.7 s), the incumbent improves on six models that stay unproved (fixnet6 5,875 → 5,405, swath 646 → 553, mod011,
 mkc, p2756, rout) and gets worse on two (air05, harp2). The shifted geo-mean fell from 15.8 s to 15.3 s, partly
 because the laptop ran faster in this round: models whose search did not change took 0.88× their earlier time.
+Letting RINS run on while it keeps finding better solutions (described with the MRPL models) is neutral here: in
+one session with and without it, 43 proved, 63 with a solution and a shifted geo-mean of 15.6 s both times. In the
+latest round mas76 missed the minute again, and models whose search did not change took 1.07× their time of the
+round before.
 
 The branch-and-cut work finds the first feasible solutions on 10teams, fixnet6, harp2, mkc, p2756 and set1ch,
 newly proves 10teams, pp08a and pp08aCUTS, and cuts solve times sharply on many models (gesa2 21 s → 0.9 s, vpm1
@@ -333,15 +338,15 @@ Two models built the way a coastal refinery like MRPL plans and schedules (`sama
 | Crude scheduling | S | 1,941 (882) | 0 / 3 of 3 | 1 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Crude scheduling | M | 5,385 (2,400) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Crude scheduling | L | 14,262 (6,552) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
-| Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.1 s vs 5.8 s (median) |
+| Refinery planning | S | 1,692 (54) | 3 / 3 of 3 | 3 / 3 of 3 | SAMADHAN 0, HiGHS 0, equal 3 | 2.0 s vs 5.8 s (median) |
 | Refinery planning | M | 13,824 (144) | 0 / 3 of 3 | 0 / 3 of 3 | SAMADHAN 0, HiGHS 3 | — |
 | Refinery planning | L | 35,976 (192) | 0 / 2 of 3 | 0 / 3 of 3 | SAMADHAN 1, HiGHS 2 | — |
 
 On the small planning model SAMADHAN proves the optimum faster than HiGHS on all three instances. On the larger
-planning models neither solver proves optimality in 60 s. SAMADHAN finds a plan on five of the six: three are within
-0.4 % of HiGHS's and one large instance is slightly better; the fifth (M, seed 7) ends 5.8 % above HiGHS's in this
-round (0.45 % in the previous one: the heuristics' budgets are time-based, so results within the minute move
-between runs). On one large instance it finds no plan within the minute.
+planning models neither solver proves optimality in 60 s. SAMADHAN finds a plan on five of the six: four are within
+0.5 % of HiGHS's and one large instance is slightly better (results within the minute move between rounds: medium
+seed 7 ended 5.8 % above HiGHS's in one of them, as the heuristics' budgets are time-based). On one large instance
+it finds no plan within the minute.
 
 The crude scheduling model is where HiGHS was clearly stronger, and the reason turned out to be the bound more than
 the search. Its LP relaxation is weak (8.75 on medium seed 7, against schedules costing tens of thousands), yet
@@ -359,17 +364,20 @@ integer columns one by one with domain propagation over all bounds, tries the ot
 completes the point with one LP. **RINS** (relaxation-induced neighbourhood search, Danna, Rothberg & Le Pape)
 improves them: the integer columns on which the incumbent and the current LP solution agree are fixed, and the
 rest is solved as a small MILP by a nested branch-and-bound, warm-started from the parent's basis, with the
-incumbent as cutoff, while the gap exceeds 1 %. With the stronger bound RINS now works on the medium instances too.
-The schedule costs in this round, with HiGHS's in brackets:
+incumbent as cutoff, while the gap exceeds 1 %. With the stronger bound RINS now works on the medium instances too,
+and it may now run on beyond its usual 30 % of the time while each call finds a cheaper schedule (up to 70 %); on
+medium seed 9 it improved four times in a row (795,450 → 92,404) before the 30 % ran out. The schedule costs in the
+latest round, with HiGHS's in brackets:
 
 | Crude scheduling | Seed 7 | Seed 8 | Seed 9 | Before the propagation |
 |---|---:|---:|---:|---|
-| S | 4,195 (4,095, optimal) | 225 (115) | 420 (275) | 4,450 / 1,585 / 675 |
+| S | 4,195 (4,095, optimal) | 225 (115) | 280 (275) | 4,450 / 1,585 / 675 |
 | M | 29,299 (17,905) | 27,545 (9,722) | 92,404 (815) | 0.38 M / 0.62 M / 0.78 M |
 | L | 889,836 (647,923) | **830,736** (884,317) | 872,225 (738,807) | 374,541 / 910,373 / none |
 
 HiGHS is still ahead on eight of the nine, far ahead on medium seed 9, where our bound stays weak (about 9, as on
-medium seed 8 and all large instances). On the large instances SAMADHAN at first found no schedule at all, because
+medium seed 8 and all large instances); there HiGHS's tree finds integral node solutions that ours does not. Run
+alone instead of six at a time, the small instances end at 4,165, 130 and 285. On the large instances SAMADHAN at first found no schedule at all, because
 the root LP did not finish: integer columns are not scaled (so that integrality is unchanged), and with this
 model's big-M coefficients (up to 499) that cost the dual simplex 12 (m + n) iterations instead of 0.9 (m + n) fully
 scaled. A root LP that has taken 1.5 (m + n) iterations now continues on a copy of the model with every column
