@@ -54,7 +54,7 @@ static double seconds_since(Clock::time_point t0) {
 struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
-    int features = 251;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
+    int features = 507;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
                                  // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS,
                                  // 256 flow cover cuts
     double time_limit = 300.0;
