@@ -8,7 +8,8 @@ primal-dual feasible point) within a time limit.
     python -m benchmarks.mittelmann [--time-limit 300]           SAMADHAN and HiGHS -> results/lp_mittelmann.json
     python -m benchmarks.mittelmann --cuopt [--time-limit 300]   cuOpt in Docker (nvidia/cuopt:latest-cu13, GPU)
 
-SAMADHAN runs its default GPU method (adaptive-step PDLP on its native CUDA kernels); HiGHS its default LP solver
+SAMADHAN runs its GPU engine as samadhan.pdlp.solve does by default (presolve, then adaptive-step PDLP on its native
+CUDA kernels; the time includes presolve and setup); HiGHS its default LP solver
 with default threads; cuOpt its PDLP method (cuOpt 26.08) with absolute and relative tolerances 1e-4. Every
 objective is compared with HiGHS's where HiGHS proves optimality.
 
@@ -46,10 +47,10 @@ def rel_err(obj, ref):
     return abs(obj - ref) / max(1.0, abs(ref))
 
 
-def run_native(time_limit, tol, names):
+def run_native(time_limit, tol, names, reuse_highs=False):
     from samadhan.baseline import solve_highs
     from samadhan.mps import read_mps
-    from samadhan.pdlp import PDLP
+    from samadhan.pdlp import solve
     rows = load()
     for path in sorted(DATA.glob("*.mps")):
         name = path.stem
@@ -58,10 +59,9 @@ def run_native(time_limit, tol, names):
         lp = read_mps(str(path))
         m, n = lp.K.shape
         print(f"\n== {name}: {m:,} rows, {n:,} columns, {lp.K.nnz:,} nonzeros", flush=True)
-        h = solve_highs(lp, time_limit=time_limit)
+        h = rows[name]["highs"] if reuse_highs and "highs" in rows.get(name, {}) else solve_highs(lp, time_limit=time_limit)
         print(f"  HiGHS     {h['status']:>20} {h['obj']:+.10e} {h['time']:8.2f}s", flush=True)
-        P = PDLP(lp, "cuda")
-        r = P.solve(tol=tol, time_limit=time_limit, max_iter=10**8)
+        r = solve(lp, "cuda", tol=tol, time_limit=time_limit, max_iter=10**8)
         ref = h["obj"] if h["status"] == "Optimal" else None
         sam = dict(status=r.status, time=r.solve_time, setup=r.setup_time, iters=r.iterations, obj=r.primal_obj,
                    rel_p=r.rel_primal_res, rel_d=r.rel_dual_res, rel_gap=r.rel_gap, device=r.device,
@@ -107,10 +107,11 @@ def main():
     ap.add_argument("--time-limit", type=float, default=300.0)
     ap.add_argument("--tol", type=float, default=1e-4)
     ap.add_argument("--cuopt", action="store_true", help="run cuOpt in Docker instead of SAMADHAN and HiGHS")
+    ap.add_argument("--reuse-highs", action="store_true", help="keep HiGHS results from the existing results file")
     a = ap.parse_args()
     if a.cuopt:
         raise SystemExit(run_cuopt(a.time_limit, a.tol, set(a.names)))
-    run_native(a.time_limit, a.tol, set(a.names))
+    run_native(a.time_limit, a.tol, set(a.names), a.reuse_highs)
 
 
 if __name__ == "__main__":

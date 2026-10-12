@@ -60,6 +60,27 @@ def test_pdlp_refinery_matches_highs(device):
     assert r.status == "optimal" and rel(r.primal_obj, ref) < 1e-5
 
 
+@pytest.mark.parametrize("device", DEVICES)
+def test_gpu_engine_with_presolve(device):
+    """samadhan.pdlp.solve reduces the LP first (a fixed column and a singleton row added here) and maps the
+    solution back: same optimum as HiGHS, feasible for the original rows, duals for every original row."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    from samadhan.pdlp import solve
+    from samadhan.verify import violation
+    base = refinery_lp(R=3, C=5, P=4, D=20, T=4, seed=1)
+    m, n = base.K.shape
+    K = sp.vstack([base.K, sp.csr_matrix(([1.0], ([0], [n - 1])), shape=(1, n))]).tocsr()   # x[n-1] >= its lower
+    lo, up = base.l.copy(), base.u.copy()
+    lo[0] = up[0] = min(max(0.0, lo[0]), up[0])                                            # a fixed column
+    lp = dataclasses.replace(base, K=K, q=np.append(base.q, lo[n - 1]), l=lo, u=up)
+    ref = solve_highs(lp)["obj"]
+    r = solve(lp, device=device, tol=1e-6, max_iter=200_000)
+    assert r.status == "optimal" and rel(r.primal_obj, ref) < 1e-5
+    assert len(r.x) == n and len(r.y) == m + 1 and violation(lp, r.x) < 1e-4
+
+
 def _native_available():
     if not torch.cuda.is_available():
         return False

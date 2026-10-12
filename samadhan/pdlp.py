@@ -446,9 +446,33 @@ class PDLP:
                       dev + ("+native" if nat is not None else ""))
 
 
-def solve(lp: LP, device="cuda", crossover=False, native=None, **kw) -> Result:
+def solve(lp: LP, device="cuda", crossover=False, native=None, presolve=True, **kw) -> Result:
     """GPU engine. With crossover=True (LP only) the first-order solution is turned into an exact optimal vertex
-    by the C++ simplex (samadhan.core.crossover); y stays the first-order dual estimate."""
+    by the C++ simplex (samadhan.core.crossover); y stays the first-order dual estimate.
+
+    presolve=True (LP): the model is first reduced by samadhan.presolve, the same presolve as for the C++ core, and
+    the solution mapped back to the original columns. A smaller model is often also better conditioned for the
+    first-order method (neos-5251015 of Mittelmann's set: the exact optimum instead of an objective that passes the
+    1e-4 test but is 0.1 off). Duals of removed rows are reported as 0; crossover runs on the reduced model."""
+    if presolve and (lp.Q is None or not lp.Q.nnz):
+        from .presolve import presolve as run_presolve
+        t0 = time.perf_counter()
+        P = run_presolve(lp)
+        tp = time.perf_counter() - t0
+        m, n = lp.K.shape
+        if P.status != "reduced":
+            nan = float("nan")
+            return Result(P.status, np.full(n, nan), np.zeros(m), nan, nan, nan, nan, nan, 0, 0, 0, 0.0, tp, device)
+        if P.lp.K.shape[1] == 0 or P.lp.K.shape[0] == 0:
+            # nothing left for the GPU (every column fixed, or no row left): the C++ core finishes the remainder
+            from .core import solve_core
+            c = solve_core(lp, time_limit=kw.get("time_limit", 600.0))
+            return Result(c.status, c.x if c.x is not None else np.full(n, float("nan")), np.zeros(m), c.obj, c.obj,
+                          0.0, 0.0, 0.0, 0, 0, 0, c.time, tp, "cpu (C++ core)", vertex=c.status == "optimal")
+        r = solve(P.lp, device=device, crossover=crossover, native=native, presolve=False, **kw)
+        y = np.zeros(m)
+        y[P.rows] = r.y
+        return replace(r, x=P.postsolve(r.x), y=y, setup_time=r.setup_time + tp)
     r = PDLP(lp, device=device, native=native).solve(**kw)
     if not crossover or (lp.Q is not None and lp.Q.nnz):
         return r

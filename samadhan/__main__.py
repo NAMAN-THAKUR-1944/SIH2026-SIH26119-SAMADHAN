@@ -24,9 +24,9 @@ def pick_engine(lp):
 
 
 def _gpu(lp, a):
-    from .pdlp import PDLP
-    r = PDLP(lp, device=a.device, native=False if a.no_native else None).solve(
-        tol=a.tol, time_limit=a.time_limit, verbose=not a.quiet, adaptive=a.method == "adaptive")
+    from .pdlp import solve
+    r = solve(lp, device=a.device, native=False if a.no_native else None, presolve=not a.no_presolve,
+              tol=a.tol, time_limit=a.time_limit, verbose=not a.quiet, adaptive=a.method == "adaptive")
     print(f"\nstatus      {r.status}\nobjective   {lp.sense * r.primal_obj:.10g}\n"
           f"dual bound  {lp.sense * r.dual_obj:.10g}\n"
           f"rel. gap    {r.rel_gap:.2e}   primal res {r.rel_primal_res:.2e}   dual res {r.rel_dual_res:.2e}\n"
@@ -82,6 +82,8 @@ def main(argv=None):
         p.add_argument("--tol", type=float, default=1e-4, help="GPU engine: relative KKT tolerance")
         p.add_argument("--method", default="adaptive", choices=["adaptive", "graph"],
                        help="GPU engine: adaptive-step PDLP, or constant-step PDLP replayed as CUDA graphs")
+        p.add_argument("--no-presolve", action="store_true",
+                       help="GPU engine: solve the model as given, without reducing it first")
         p.add_argument("--no-native", action="store_true",
                        help="GPU engine: PyTorch operations instead of the fused native CUDA kernels")
         p.add_argument("--time-limit", type=float, default=None, help="seconds (default 600; MILP demos 60)")
