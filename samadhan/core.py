@@ -82,6 +82,22 @@ def _load():
                              P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_char), P(ctypes.c_double),
                              P(ctypes.c_double), ctypes.c_double, ctypes.c_double, P(ctypes.c_double),
                              P(ctypes.c_int)]
+    lib.sm_presolve.restype = ctypes.c_void_p
+    lib.sm_presolve.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int, P(ctypes.c_int), P(ctypes.c_int),
+                                P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double),
+                                P(ctypes.c_double), P(ctypes.c_char), ctypes.c_double, ctypes.c_int, ctypes.c_double,
+                                ctypes.c_double, P(ctypes.c_long)]
+    lib.sm_presolve_get.restype = None
+    lib.sm_presolve_get.argtypes = [ctypes.c_void_p, P(ctypes.c_int), P(ctypes.c_int), P(ctypes.c_int),
+                                    P(ctypes.c_int), P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_double),
+                                    P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_char), P(ctypes.c_double),
+                                    P(ctypes.c_double), P(ctypes.c_double), P(ctypes.c_int), P(ctypes.c_double),
+                                    P(ctypes.c_double), P(ctypes.c_int), P(ctypes.c_int), P(ctypes.c_double)]
+    lib.sm_presolve_free.restype = None
+    lib.sm_presolve_free.argtypes = [ctypes.c_void_p]
+    lib.sm_scale.restype = None
+    lib.sm_scale.argtypes = [ctypes.c_int, ctypes.c_int, P(ctypes.c_int), P(ctypes.c_int), P(ctypes.c_double),
+                             P(ctypes.c_double), P(ctypes.c_double), ctypes.c_int]
     _lib = lib
     return lib
 

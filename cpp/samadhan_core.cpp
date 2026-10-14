@@ -21,6 +21,7 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -31,6 +32,7 @@
 #include <queue>
 #include <random>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -775,6 +777,11 @@ struct Simplex {
             if (want_refactor() && !refactor_basis()) return NUMERIC;
             if (Clock::now() > t_end) return TIME_LIMIT;
             if (iters >= opt.max_lp_iter) return ITER_LIMIT;
+            if (progress && iters % 5000 == 0) {
+                double obj = 0.0;
+                for (int j = 0; j < n; ++j) obj += c[j] * x[j];
+                std::printf("    primal simplex: iteration %ld, objective %.10g\n", iters, obj);
+            }
             int q = -1; double best = 0.0;
             for (int j = 0; j < N; ++j) {
                 double v = dual_infeas(j);
@@ -869,6 +876,8 @@ struct Simplex {
     // Superbasic columns: nonbasic, but strictly inside their bounds. While they wait for push_superbasics their
     // bounds are fixed at their values (the real bounds are kept in sb_lo / sb_hi), so every solve sees them there.
     std::vector<int> superbasic;
+    bool progress = false;                           // crossover with verbose output: report the long phases
+    std::vector<int> nzk;                            // nonzero positions of the transformed column (push)
     std::vector<double> sb_lo, sb_hi;
 
     // crash basis from an approximate solution x0 (structural columns): columns and row activities strictly
@@ -963,8 +972,12 @@ struct Simplex {
         if (superbasic.empty()) return 0;
         compute_duals();
         long pivots = 0;
+        auto t_push = Clock::now();
         for (size_t q = 0; q < superbasic.size(); ++q) {
             int j = superbasic[q];
+            if (progress && q && q % 20000 == 0)
+                std::printf("    pushed %zu of %zu superbasic columns (%ld basis changes), %.1fs\n", q,
+                            superbasic.size(), pivots, seconds_since(t_push));
             // (refactorise while column j is still held at its value by its fixed bounds)
             if (want_refactor() && !refactor_basis()) return -1;
             double v = x[j];
@@ -974,6 +987,9 @@ struct Simplex {
                 continue;
             }
             col_alpha(j);
+            // the ratio tests and the update only touch the nonzeros of the transformed column
+            nzk.clear();
+            for (int k = 0; k < m; ++k) if (acol[k] != 0.0) nzk.push_back(k);
             double s0 = d[j] < -opt.tol_d ? 1.0 : d[j] > opt.tol_d ? -1.0 : (ub[j] - v <= v - lb[j] ? 1.0 : -1.0);
             bool done = false;
             for (int pass = 0; pass < 2 && !done; ++pass) {
@@ -981,7 +997,7 @@ struct Simplex {
                 double dist = s > 0 ? ub[j] - v : v - lb[j];
                 // Harris two-pass ratio test over the basic variables (x_B moves by -t s alpha)
                 double tmax = INF;
-                for (int k = 0; k < m; ++k) {
+                for (int k : nzk) {
                     double a = s * acol[k];
                     if (std::fabs(a) < opt.tol_piv) continue;
                     int jb = head[k];
@@ -990,7 +1006,7 @@ struct Simplex {
                 }
                 int r = -1; double t = 0.0, amax = 0.0;
                 if (tmax < INF) {
-                    for (int k = 0; k < m; ++k) {
+                    for (int k : nzk) {
                         double a = s * acol[k];
                         if (std::fabs(a) < opt.tol_piv) continue;
                         int jb = head[k];
@@ -1001,14 +1017,14 @@ struct Simplex {
                     }
                 }
                 if (std::isfinite(dist) && (r < 0 || dist <= t)) {         // the column reaches its bound
-                    for (int k = 0; k < m; ++k) x[head[k]] -= dist * s * acol[k];
+                    for (int k : nzk) x[head[k]] -= dist * s * acol[k];
                     st[j] = s > 0 ? AT_UB : AT_LB;
                     x[j] = s > 0 ? ub[j] : lb[j];
                     done = true;
                 } else if (r >= 0) {                                         // a basic variable blocks: swap
                     int jl = head[r];
                     bool leave_lb = s * acol[r] > 0;
-                    for (int k = 0; k < m; ++k) x[head[k]] -= t * s * acol[k];
+                    for (int k : nzk) x[head[k]] -= t * s * acol[k];
                     x[j] = v + s * t;
                     x[jl] = leave_lb ? lb[jl] : ub[jl];
                     st[jl] = leave_lb ? AT_LB : AT_UB;
@@ -1023,7 +1039,7 @@ struct Simplex {
             if (!done) {               // free column that nothing blocks in either direction: it goes to zero
                 place_nonbasic(j);
                 double dx = x[j] - v;
-                for (int k = 0; k < m; ++k) x[head[k]] -= dx * acol[k];
+                for (int k : nzk) x[head[k]] -= dx * acol[k];
             }
         }
         superbasic.clear();
@@ -1239,7 +1255,12 @@ struct Solver {
         for (int k = 0; k < S.m; ++k) crash_basic += S.head[k] < S.n;
         long n_relaxed = S.relax_infeasible_basics();
         long n_super = (long)S.superbasic.size();
+        S.progress = opt.verbose != 0;
+        if (opt.verbose)
+            std::printf("crossover: %d rows, %d columns; crash basis %.1fs, %ld bounds relaxed, %ld superbasic to push\n",
+                        S.m, S.n, seconds_since(t0), n_relaxed, n_super);
         long it_push = S.push_superbasics();
+        if (opt.verbose) std::printf("crossover: push done %.1fs\n", seconds_since(t0));
         if (it_push < 0) {
             info.time = seconds_since(t0);
             return 5;
@@ -3273,4 +3294,746 @@ SM_API int sm_lu_check(int m, const int* colptr, const int* rowidx, const double
     std::memcpy(b, x.data(), sizeof(double) * m);
     std::memcpy(d, y.data(), sizeof(double) * m);
     return F.rank;
+}
+
+// ---------------------------------------------------------------------------------------------- presolve
+// The presolve of samadhan/presolve.py in C++: the same reductions in the same order with the same arithmetic, so
+// that both give the same reduced model (presolve.py stays as the reference implementation; the tests compare the
+// two). The comments there explain each reduction; here only what the port needs.
+namespace ps {
+
+constexpr double FEAS_TOL = 1e-9, INT_TOL = 1e-6, PROP_WORK = 5e7;
+constexpr double INF = std::numeric_limits<double>::infinity();
+
+static double fin0(double v) { return std::isfinite(v) ? v : 0.0; }
+static double pfloor(double v) { return std::floor(v + INT_TOL * std::max(1.0, std::fabs(fin0(v)))); }
+static double pceil(double v) { return std::ceil(v - INT_TOL * std::max(1.0, std::fabs(fin0(v)))); }
+
+struct Sub {                       // x_k = (b - coefs . x[cols]) / a, recovered in postsolve
+    int k;
+    double b;
+    std::vector<int> cols;
+    std::vector<double> coefs;
+    double a;
+};
+
+enum Stat { PASSES, FIXED, EMPTY_ROWS, SINGLETON_ROWS, REDUNDANT, FORCING, TIGHTENED, FREE_SINGLETONS, DUAL_FIXED,
+            EMPTY_COLS, PROBE_FIXED, PROBE_TIGHTENED, PROBE_EQUIV, PARALLEL, DOUBLETONS, NSTAT };
+
+struct Presolver {
+    int m = 0, n = 0;
+    std::vector<int> ap, aj;                   // A as CSR, columns sorted within each row (inactive rows emptied
+    std::vector<double> ax;                    // at the next substitution)
+    std::vector<double> lo, hi, l, u, c, pl, pu, x_fixed;
+    std::vector<char> isint, row_on, col_on;
+    double cnst = 0.0;
+    std::vector<Sub> stack;
+    long st[NSTAT] = {0};
+    int status = 0;                            // 0 reduced, 1 infeasible, 2 unbounded
+    // the active submatrix S of the current pass: rows `rows`, columns `cols` (local indices in sp/si/sv, CSR)
+    std::vector<int> rows, cols, colloc, sp, si;
+    std::vector<double> sv;
+    // work arrays
+    std::vector<double> wval;
+    std::vector<char> wflag;
+
+    bool cols_dirty = true;                    // col_on changed since the last build_S
+    void build_S() {
+        if (cols_dirty) {
+            cols.clear();
+            colloc.assign(n, -1);
+            for (int j = 0; j < n; ++j) if (col_on[j]) { colloc[j] = (int)cols.size(); cols.push_back(j); }
+            cols_dirty = false;
+        }
+        rows.clear();
+        sp.resize(m + 1); si.resize(aj.size()); sv.resize(aj.size());
+        int r = 0, nz = 0;
+        sp[0] = 0;
+        const int* cl = colloc.data();
+        for (int i = 0; i < m; ++i) {
+            if (!row_on[i]) continue;
+            rows.push_back(i);
+            for (int t = ap[i]; t < ap[i + 1]; ++t) {
+                int jl = cl[aj[t]];
+                if (jl >= 0) { si[nz] = jl; sv[nz] = ax[t]; ++nz; }
+            }
+            sp[++r] = nz;
+        }
+        sp.resize(r + 1); si.resize(nz); sv.resize(nz);
+    }
+
+    // fix columns fc at vals: objective constant and the rows' sides absorb them
+    void fix(const std::vector<int>& fc, const std::vector<double>& vals) {
+        double dot = 0.0;
+        for (size_t t = 0; t < fc.size(); ++t) {
+            x_fixed[fc[t]] = vals[t]; col_on[fc[t]] = 0; cols_dirty = true;
+            dot += c[fc[t]] * vals[t];
+            wflag[fc[t]] = 1; wval[fc[t]] = vals[t];
+        }
+        cnst += dot;
+        for (int i = 0; i < m; ++i) {
+            if (!row_on[i]) continue;
+            double s = 0.0;
+            bool any = false;
+            for (int t = ap[i]; t < ap[i + 1]; ++t)
+                if (wflag[aj[t]]) { s += ax[t] * wval[aj[t]]; any = true; }
+            if (any) { lo[i] -= s; hi[i] -= s; }
+        }
+        for (int j : fc) wflag[j] = 0;
+    }
+
+    // row activity bounds of S over bl <= x <= bu (local columns): finite parts and numbers of infinite terms
+    void activity(const std::vector<double>& bl, const std::vector<double>& bu, std::vector<double>& mn,
+                  std::vector<double>& mn_inf, std::vector<double>& mx, std::vector<double>& mx_inf) const {
+        int ms = (int)rows.size();
+        mn.assign(ms, 0.0); mn_inf.assign(ms, 0.0); mx.assign(ms, 0.0); mx_inf.assign(ms, 0.0);
+        for (int r = 0; r < ms; ++r) {
+            double pmn = 0.0, nmn = 0.0, pmx = 0.0, nmx = 0.0, imn = 0.0, imx = 0.0;
+            for (int t = sp[r]; t < sp[r + 1]; ++t) {
+                double a = sv[t], lj = bl[si[t]], uj = bu[si[t]];
+                if (a > 0) {
+                    pmn += a * fin0(lj); pmx += a * fin0(uj);
+                    imn += !std::isfinite(lj); imx += !std::isfinite(uj);
+                } else if (a < 0) {
+                    nmn += a * fin0(uj); nmx += a * fin0(lj);
+                    imn += !std::isfinite(uj); imx += !std::isfinite(lj);
+                }
+            }
+            mn[r] = pmn + nmn; mx[r] = pmx + nmx; mn_inf[r] = imn; mx_inf[r] = imx;
+        }
+    }
+
+    // bound propagation (presolve.py: _propagate); returns the number of tightened integer bounds
+    long propagate(const std::vector<double>& rlo, const std::vector<double>& rhi) {
+        long nnz = (long)si.size();
+        if (!nnz) return 0;
+        int ms = (int)rows.size(), ns = (int)cols.size();
+        long sweeps = std::max(1L, (long)std::floor(PROP_WORK / (double)nnz));
+        std::vector<double> bl(ns), bu(ns), mn, mn_inf, mx, mx_inf, cand_u(n), cand_l(n);
+        std::vector<char> touched(n, 0);
+        long count = 0;
+        for (long sw = 0; sw < std::min(sweeps, 500L); ++sw) {
+            bool bad = false;
+            for (int k = 0; k < ns; ++k) {
+                int j = cols[k];
+                bl[k] = isint[j] ? l[j] : std::max(l[j], pl[j]);
+                bu[k] = isint[j] ? u[j] : std::min(u[j], pu[j]);
+                if (bl[k] > bu[k] + FEAS_TOL * (1.0 + std::fabs(fin0(bl[k])))) bad = true;
+            }
+            if (bad) break;
+            activity(bl, bu, mn, mn_inf, mx, mx_inf);
+            std::fill(cand_u.begin(), cand_u.end(), INF);
+            std::fill(cand_l.begin(), cand_l.end(), -INF);
+            for (int r = 0; r < ms; ++r)
+                for (int t = sp[r]; t < sp[r + 1]; ++t) {
+                    double a = sv[t], lj = bl[si[t]], uj = bu[si[t]];
+                    int j = cols[si[t]];
+                    double cmin = a > 0 ? a * lj : a * uj, cmax = a > 0 ? a * uj : a * lj;
+                    bool inf_min = !std::isfinite(cmin), inf_max = !std::isfinite(cmax);
+                    double rest_min = (mn_inf[r] - inf_min == 0) ? mn[r] - (inf_min ? 0.0 : cmin) : -INF;
+                    double rest_max = (mx_inf[r] - inf_max == 0) ? mx[r] - (inf_max ? 0.0 : cmax) : INF;
+                    double from_hi = (rhi[r] - rest_min) / a, from_lo = (rlo[r] - rest_max) / a;
+                    double nu = a > 0 ? from_hi : from_lo, nl = a > 0 ? from_lo : from_hi;
+                    if (std::isnan(nu)) nu = INF;
+                    if (std::isnan(nl)) nl = -INF;
+                    if (isint[j]) { nu = pfloor(nu); nl = pceil(nl); }
+                    cand_u[j] = std::min(cand_u[j], nu);
+                    cand_l[j] = std::max(cand_l[j], nl);
+                }
+            bool imp = false;
+            std::vector<int> iu, il, cu, cl;
+            for (int j = 0; j < n; ++j) {
+                double cur_u = isint[j] ? u[j] : std::min(u[j], pu[j]);
+                double cur_l = isint[j] ? l[j] : std::max(l[j], pl[j]);
+                double ref_u = std::fabs(std::isfinite(cur_u) ? cur_u : fin0(cand_u[j]));
+                double ref_l = std::fabs(std::isfinite(cur_l) ? cur_l : fin0(cand_l[j]));
+                bool imp_u = cand_u[j] < cur_u - (isint[j] ? 0.5 : 1e-3 * std::max(1.0, ref_u));
+                bool imp_l = cand_l[j] > cur_l + (isint[j] ? 0.5 : 1e-3 * std::max(1.0, ref_l));
+                if (imp_u) { imp = true; (isint[j] ? iu : cu).push_back(j); }
+                if (imp_l) { imp = true; (isint[j] ? il : cl).push_back(j); }
+            }
+            if (!imp) break;
+            for (int j : iu) u[j] = cand_u[j];
+            for (int j : il) l[j] = cand_l[j];
+            count += (long)(iu.size() + il.size());
+            for (int j : cu) pu[j] = cand_u[j];
+            for (int j : cl) pl[j] = cand_l[j];
+        }
+        return count;
+    }
+
+    // x_k = b0_k + t_k x_{target_k} for every k in ks: A <- A T, c <- T'c, the rows' sides absorb A b0
+    // (presolve.py builds the matrix T for doubletons and for probing equivalences)
+    void substitute(const std::vector<int>& ks, const std::vector<int>& target, const std::vector<double>& t,
+                    const std::vector<double>& b0) {
+        std::vector<int> kidx(n, -1);
+        for (size_t q = 0; q < ks.size(); ++q) kidx[ks[q]] = (int)q;
+        // shift = A b0 (sequential over each row's entries; only substituted columns have b0 != 0)
+        for (int i = 0; i < m; ++i) {
+            if (!row_on[i]) continue;
+            double s = 0.0;
+            bool any = false;
+            for (int e = ap[i]; e < ap[i + 1]; ++e) {
+                int q = kidx[aj[e]];
+                if (q >= 0 && b0[q] != 0.0) { s += ax[e] * b0[q]; any = true; }
+            }
+            if (any) { lo[i] -= s; hi[i] -= s; }
+        }
+        double dot = 0.0;
+        for (size_t q = 0; q < ks.size(); ++q) dot += c[ks[q]] * b0[q];
+        cnst += dot;
+        // c <- T'c: the column j of T has 1 at row j (kept columns) and t_k at the rows k with target j, summed in
+        // row order
+        std::vector<std::array<double, 3>> into;          // (target, row of T, value), sorted
+        into.reserve(2 * ks.size());
+        for (size_t q = 0; q < ks.size(); ++q) into.push_back({(double)target[q], (double)ks[q], c[ks[q]] * t[q]});
+        std::vector<char> tgt(n, 0);
+        for (size_t q = 0; q < ks.size(); ++q) tgt[target[q]] = 1;
+        for (int j = 0; j < n; ++j) if (tgt[j] && kidx[j] < 0) into.push_back({(double)j, (double)j, c[j] * 1.0});
+        std::sort(into.begin(), into.end(), [](const std::array<double, 3>& a, const std::array<double, 3>& b) {
+            return a[0] < b[0] || (a[0] == b[0] && a[1] < b[1]);
+        });
+        std::vector<double> cn(c);
+        for (size_t q = 0; q < ks.size(); ++q) cn[ks[q]] = 0.0;
+        for (size_t g = 0; g < into.size();) {
+            size_t e = g;
+            int j = (int)into[g][0];
+            double s = 0.0;
+            while (e < into.size() && (int)into[e][0] == j) s += into[e++][2];
+            if (kidx[j] < 0) cn[j] = s;
+            g = e;
+        }
+        c.swap(cn);
+        // A <- A T, row by row in entry order (scipy's sparse product), exact zeros dropped, columns sorted; the
+        // rows no longer active are dropped
+        std::vector<double> acc(n, 0.0);
+        std::vector<char> seen(n, 0);
+        std::vector<int> touched, nap(m + 1, 0), naj;
+        std::vector<double> nax;
+        naj.reserve(aj.size()); nax.reserve(ax.size());
+        for (int i = 0; i < m; ++i) {
+            if (row_on[i]) {
+                bool hit = false;
+                for (int e = ap[i]; e < ap[i + 1]; ++e) if (kidx[aj[e]] >= 0) { hit = true; break; }
+                if (!hit) {
+                    naj.insert(naj.end(), aj.begin() + ap[i], aj.begin() + ap[i + 1]);
+                    nax.insert(nax.end(), ax.begin() + ap[i], ax.begin() + ap[i + 1]);
+                } else {
+                    touched.clear();
+                    for (int e = ap[i]; e < ap[i + 1]; ++e) {
+                        int j = aj[e], q = kidx[j];
+                        int to = q >= 0 ? target[q] : j;
+                        double v = q >= 0 ? ax[e] * t[q] : ax[e] * 1.0;
+                        if (!seen[to]) { seen[to] = 1; acc[to] = 0.0; touched.push_back(to); }
+                        acc[to] += v;
+                    }
+                    std::sort(touched.begin(), touched.end());
+                    for (int j : touched) {
+                        if (acc[j] != 0.0) { naj.push_back(j); nax.push_back(acc[j]); }
+                        seen[j] = 0;
+                    }
+                }
+            }
+            nap[i + 1] = (int)naj.size();
+        }
+        ap.swap(nap); aj.swap(naj); ax.swap(nax);
+    }
+
+    // parallel rows of S (two or more entries): pairs (i, k, lam), row k = lam row i, i the first row of its group
+    std::vector<std::tuple<int, int, double>> parallel_rows() const {
+        int ms = (int)rows.size();
+        std::vector<int> cand;
+        std::vector<double> first(ms, 0.0);
+        for (int r = 0; r < ms; ++r) {
+            int cnt = sp[r + 1] - sp[r];
+            if (cnt > 0) first[r] = sv[sp[r]];
+            if (cnt > 1) cand.push_back(r);
+        }
+        std::vector<std::tuple<int, int, double>> pairs;
+        if (cand.size() < 2) return pairs;
+        auto scaled = [&](int r, int t) { return sv[t] / first[r]; };
+        // order by count, pattern and scaled values; equal rows end up next to each other, lowest row first
+        auto less = [&](int a, int b) {
+            int ca = sp[a + 1] - sp[a], cb = sp[b + 1] - sp[b];
+            if (ca != cb) return ca < cb;
+            for (int t = 0; t < ca; ++t) {
+                int ja = si[sp[a] + t], jb = si[sp[b] + t];
+                if (ja != jb) return ja < jb;
+            }
+            for (int t = 0; t < ca; ++t) {
+                double va = scaled(a, sp[a] + t), vb = scaled(b, sp[b] + t);
+                if (va != vb) return va < vb;              // exact order: a valid sort; equal-within-1e-12 rows
+            }                                              // still end up next to each other
+            return a < b;
+        };
+        std::vector<int> order(cand);
+        std::stable_sort(order.begin(), order.end(), less);
+        auto same = [&](int head, int k) {                 // np.allclose(kv, hv, rtol=1e-12, atol=0)
+            int ch = sp[head + 1] - sp[head], ck = sp[k + 1] - sp[k];
+            if (ch != ck) return false;
+            for (int t = 0; t < ch; ++t) if (si[sp[head] + t] != si[sp[k] + t]) return false;
+            for (int t = 0; t < ch; ++t) {
+                double kv = scaled(k, sp[k] + t), hv = scaled(head, sp[head] + t);
+                if (!(std::fabs(kv - hv) <= 1e-12 * std::fabs(hv))) return false;
+            }
+            return true;
+        };
+        for (size_t g = 0; g < order.size();) {
+            size_t e = g + 1;
+            while (e < order.size() && same(order[g], order[e])) ++e;
+            if (e - g > 1) {
+                std::vector<int> grp(order.begin() + g, order.begin() + e);
+                std::sort(grp.begin(), grp.end());
+                for (size_t q = 1; q < grp.size(); ++q)
+                    if (same(grp[0], grp[q])) pairs.push_back({grp[0], grp[q], first[grp[q]] / first[grp[0]]});
+            }
+            g = e;
+        }
+        return pairs;
+    }
+
+    void run(int max_passes, double probe_work, double probe_seconds) {
+        for (int j = 0; j < n; ++j) if (isint[j]) { l[j] = pceil(l[j]); u[j] = pfloor(u[j]); }
+        row_on.assign(m, 1); col_on.assign(n, 1);
+        pl = l; pu = u;
+        x_fixed.assign(n, 0.0);
+        wval.assign(n, 0.0); wflag.assign(n, 0);
+        int probes_left = 2, parallel_left = 2;
+        std::vector<double> mn, mn_inf, mx, mx_inf;
+        for (int pass = 0; pass < max_passes; ++pass) {
+            st[PASSES]++;
+            bool changed = false;
+            for (int j = 0; j < n; ++j) if (l[j] > u[j] + FEAS_TOL) { status = 1; return; }
+            // fixed columns
+            {
+                std::vector<int> fc; std::vector<double> fv;
+                for (int j = 0; j < n; ++j) if (col_on[j] && u[j] - l[j] <= FEAS_TOL) { fc.push_back(j); fv.push_back(l[j]); }
+                if (!fc.empty()) { fix(fc, fv); st[FIXED] += (long)fc.size(); changed = true; }
+            }
+            build_S();
+            int ms = (int)rows.size(), ns = (int)cols.size();
+            std::vector<int> cnt(ms);
+            for (int r = 0; r < ms; ++r) cnt[r] = sp[r + 1] - sp[r];
+            // empty rows
+            {
+                bool any = false;
+                for (int r = 0; r < ms; ++r) {
+                    if (cnt[r]) continue;
+                    int i = rows[r];
+                    if (lo[i] > FEAS_TOL || hi[i] < -FEAS_TOL) { status = 1; return; }
+                }
+                for (int r = 0; r < ms; ++r) if (!cnt[r]) { row_on[rows[r]] = 0; st[EMPTY_ROWS]++; any = true; }
+                if (any) changed = true;
+            }
+            // singleton rows -> column bounds
+            {
+                bool any = false;
+                for (int r = 0; r < ms; ++r) {
+                    if (cnt[r] != 1) continue;
+                    any = true;
+                    int i = rows[r], j = cols[si[sp[r]]];
+                    double a = sv[sp[r]], b1 = lo[i] / a, b2 = hi[i] / a;
+                    double nl = a > 0 ? b1 : b2, nu = a > 0 ? b2 : b1;
+                    if (isint[j]) { nl = pceil(nl); nu = pfloor(nu); }
+                    l[j] = std::max(l[j], nl); u[j] = std::min(u[j], nu);
+                }
+                if (any) {
+                    for (int r = 0; r < ms; ++r) if (cnt[r] == 1) { row_on[rows[r]] = 0; st[SINGLETON_ROWS]++; }
+                    continue;
+                }
+            }
+            // activity bounds: redundant, infeasible and forcing rows
+            std::vector<double> Sl(ns), Su(ns), rlo(ms), rhi(ms), tol(ms), rmn(ms), rmx(ms);
+            for (int k = 0; k < ns; ++k) { Sl[k] = l[cols[k]]; Su[k] = u[cols[k]]; }
+            activity(Sl, Su, mn, mn_inf, mx, mx_inf);
+            std::vector<char> red(ms, 0);
+            bool any_red = false;
+            for (int r = 0; r < ms; ++r) {
+                rmn[r] = mn_inf[r] > 0 ? -INF : mn[r];
+                rmx[r] = mx_inf[r] > 0 ? INF : mx[r];
+                rlo[r] = lo[rows[r]]; rhi[r] = hi[rows[r]];
+                tol[r] = FEAS_TOL * (1.0 + std::fabs(fin0(rlo[r])) + std::fabs(fin0(rhi[r])));
+                if (rmn[r] > rhi[r] + 1e3 * tol[r] || rmx[r] < rlo[r] - 1e3 * tol[r]) { status = 1; return; }
+            }
+            for (int r = 0; r < ms; ++r) {
+                red[r] = rmn[r] >= rlo[r] - tol[r] && rmx[r] <= rhi[r] + tol[r];
+                if (red[r]) { row_on[rows[r]] = 0; st[REDUNDANT]++; any_red = true; }
+            }
+            if (any_red) changed = true;
+            // forcing rows
+            {
+                std::vector<char> f_up(ms, 0), f_dn(ms, 0);
+                bool any = false;
+                for (int r = 0; r < ms; ++r) {
+                    f_up[r] = !red[r] && std::isfinite(rmx[r]) && std::fabs(rmx[r] - rlo[r]) <= tol[r];
+                    f_dn[r] = !red[r] && !f_up[r] && std::isfinite(rmn[r]) && std::fabs(rmn[r] - rhi[r]) <= tol[r];
+                    any = any || f_up[r] || f_dn[r];
+                }
+                if (any) {
+                    for (int pass2 = 0; pass2 < 2; ++pass2) {
+                        const std::vector<char>& mask = pass2 == 0 ? f_up : f_dn;
+                        bool at_max = pass2 == 0;
+                        std::vector<int> js; std::vector<double> vals;
+                        for (int r = 0; r < ms; ++r) {
+                            if (!mask[r]) continue;
+                            for (int t = sp[r]; t < sp[r + 1]; ++t) {
+                                int j = cols[si[t]];
+                                js.push_back(j); vals.push_back((sv[t] > 0) == at_max ? u[j] : l[j]);
+                            }
+                        }
+                        std::vector<char> done(n, 0);           // np.unique(..., return_index): first occurrence
+                        for (size_t q = 0; q < js.size(); ++q)
+                            if (!done[js[q]]) { done[js[q]] = 1; l[js[q]] = u[js[q]] = vals[q]; }
+                    }
+                    for (int r = 0; r < ms; ++r) st[FORCING] += f_up[r] + f_dn[r];
+                    continue;
+                }
+            }
+            // domain propagation
+            {
+                bool anyint = false;
+                for (int j : cols) if (isint[j]) { anyint = true; break; }
+                if (anyint) {
+                    long k = propagate(rlo, rhi);
+                    if (k) { st[TIGHTENED] += k; continue; }
+                }
+            }
+            // free column singletons
+            std::vector<int> ccnt(ns, 0), cfirst(ns, -1), cfirst_row(ns, -1);
+            for (int r = 0; r < ms; ++r)
+                for (int t = sp[r]; t < sp[r + 1]; ++t) {
+                    int k = si[t];
+                    if (!ccnt[k]) { cfirst[k] = t; cfirst_row[k] = r; }
+                    ccnt[k]++;
+                }
+            {
+                std::vector<int> sel;                         // candidates t (local columns), first per row
+                std::vector<char> row_taken(ms, 0);
+                for (int kc = 0; kc < ns; ++kc) {
+                    int k = cols[kc];
+                    if (ccnt[kc] != 1 || isint[k]) continue;
+                    int il = cfirst_row[kc], i = rows[il];
+                    double a = sv[cfirst[kc]], lk = l[k], uk = u[k];
+                    double cmin = a > 0 ? a * lk : a * uk, cmax = a > 0 ? a * uk : a * lk;
+                    bool fmin = std::isfinite(cmin), fmax = std::isfinite(cmax);
+                    double rest_min = (mn_inf[il] - !fmin == 0) ? mn[il] - (fmin ? cmin : 0.0) : -INF;
+                    double rest_max = (mx_inf[il] - !fmax == 0) ? mx[il] - (fmax ? cmax : 0.0) : INF;
+                    double b = lo[i];
+                    double lo_imp = (b - rest_max) / a, hi_imp = (b - rest_min) / a;
+                    if (a < 0) std::swap(lo_imp, hi_imp);
+                    double tl = 1e-9 * (1.0 + std::fabs(b));
+                    bool ok = std::isfinite(hi[i]) && row_on[i] && std::fabs(a) >= 1e-9 && lo_imp >= lk - tl &&
+                              hi_imp <= uk + tl;
+                    if (ok && !row_taken[il]) { row_taken[il] = 1; sel.push_back(kc); }
+                }
+                for (int kc : sel) {
+                    int k = cols[kc], il = cfirst_row[kc], i = rows[il];
+                    double a = sv[cfirst[kc]], b = lo[i];
+                    Sub s{k, b, {}, {}, a};
+                    for (int t = sp[il]; t < sp[il + 1]; ++t)
+                        if (si[t] != kc) { s.cols.push_back(cols[si[t]]); s.coefs.push_back(sv[t]); }
+                    if (c[k] != 0.0) {
+                        for (size_t q = 0; q < s.cols.size(); ++q) c[s.cols[q]] -= c[k] * s.coefs[q] / a;
+                        cnst += c[k] * b / a;
+                    }
+                    stack.push_back(std::move(s));
+                    col_on[k] = 0; row_on[i] = 0; cols_dirty = true;
+                }
+                if (!sel.empty()) { st[FREE_SINGLETONS] += (long)sel.size(); continue; }
+            }
+            // doubleton equations
+            {
+                std::vector<int> ks, js, rows_done;
+                std::vector<double> bs, ajs, aks;
+                std::vector<char> used(n, 0);
+                for (int r = 0; r < ms; ++r) {
+                    int i = rows[r];
+                    if (cnt[r] != 2 || !std::isfinite(hi[i])) continue;
+                    int j1 = cols[si[sp[r]]], j2 = cols[si[sp[r] + 1]];
+                    double v1 = sv[sp[r]], v2 = sv[sp[r] + 1];
+                    if (used[j1] || used[j2] || v1 == 0.0 || v2 == 0.0) continue;
+                    // x_k: a continuous column, the one with the larger coefficient (the first of equals)
+                    int k, j; double ak, aj;
+                    bool c2 = !isint[j2], c1 = !isint[j1];
+                    if (!c1 && !c2) continue;
+                    if (c2 && (!c1 || std::fabs(v2) >= std::fabs(v1))) { k = j2; ak = v2; j = j1; aj = v1; }
+                    else { k = j1; ak = v1; j = j2; aj = v2; }
+                    if (std::fabs(aj / ak) > 1e3) continue;
+                    double b = lo[i];
+                    double e1 = b - ak * u[k], e2 = b - ak * l[k];
+                    double ylo = ak > 0 ? e1 : e2, yhi = ak > 0 ? e2 : e1;
+                    double nl = aj > 0 ? ylo / aj : yhi / aj, nu = aj > 0 ? yhi / aj : ylo / aj;
+                    if (std::isnan(nl)) nl = -INF;
+                    if (std::isnan(nu)) nu = INF;
+                    if (isint[j]) {
+                        if (std::isfinite(nl)) nl = std::ceil(nl - INT_TOL * std::max(1.0, std::fabs(nl)));
+                        if (std::isfinite(nu)) nu = std::floor(nu + INT_TOL * std::max(1.0, std::fabs(nu)));
+                    }
+                    nl = l[j] >= nl ? l[j] : nl;               // Python's max(L[j], nl) and min(U[j], nu)
+                    nu = u[j] <= nu ? u[j] : nu;
+                    if (std::isfinite(nl) && std::isfinite(nu) && nl - nu > FEAS_TOL * (1.0 + std::fabs(nl))) {
+                        status = 1; return;
+                    }
+                    l[j] = nl; u[j] = nl >= nu ? nl : nu;
+                    used[j] = used[k] = 1;
+                    ks.push_back(k); js.push_back(j); bs.push_back(b); ajs.push_back(aj); aks.push_back(ak);
+                    rows_done.push_back(i);
+                }
+                for (int i : rows_done) row_on[i] = 0;
+                if (!ks.empty()) {
+                    std::vector<double> t(ks.size()), b0(ks.size());
+                    for (size_t q = 0; q < ks.size(); ++q) { t[q] = -ajs[q] / aks[q]; b0[q] = bs[q] / aks[q]; }
+                    substitute(ks, js, t, b0);
+                    for (size_t q = 0; q < ks.size(); ++q) {
+                        col_on[ks[q]] = 0; cols_dirty = true;
+                        stack.push_back({ks[q], bs[q], {js[q]}, {ajs[q]}, aks[q]});
+                    }
+                    st[DOUBLETONS] += (long)ks.size();
+                    continue;
+                }
+            }
+            // dual fixing
+            {
+                std::vector<double> down(ns, 0.0), up(ns, 0.0);
+                for (int r = 0; r < ms; ++r) {
+                    bool eqr = std::isfinite(hi[rows[r]]);
+                    for (int t = sp[r]; t < sp[r + 1]; ++t) {
+                        down[si[t]] += (eqr || sv[t] > 0) ? 1.0 : 0.0;
+                        up[si[t]] += (eqr || sv[t] < 0) ? 1.0 : 0.0;
+                    }
+                }
+                std::vector<int> jl, ju;
+                for (int k = 0; k < ns; ++k) {
+                    int j = cols[k];
+                    bool at_l = c[j] >= 0 && down[k] == 0 && std::isfinite(l[j]);
+                    bool at_u = !at_l && c[j] <= 0 && up[k] == 0 && std::isfinite(u[j]);
+                    if (at_l) jl.push_back(j);
+                    if (at_u) ju.push_back(j);
+                }
+                if (!jl.empty() || !ju.empty()) {
+                    std::vector<int> fc(jl); fc.insert(fc.end(), ju.begin(), ju.end());
+                    std::vector<double> fv;
+                    for (int j : jl) fv.push_back(l[j]);
+                    for (int j : ju) fv.push_back(u[j]);
+                    fix(fc, fv);
+                    st[DUAL_FIXED] += (long)fc.size();
+                    continue;
+                }
+            }
+            // empty columns: fix at the bound the cost prefers
+            {
+                std::vector<int> ec; std::vector<double> ev;
+                for (int k = 0; k < ns; ++k) {
+                    if (ccnt[k]) continue;
+                    int j = cols[k];
+                    double v = c[j] > 0 ? l[j] : c[j] < 0 ? u[j] : std::min(std::max(0.0, l[j]), u[j]);
+                    ec.push_back(j); ev.push_back(v);
+                }
+                if (!ec.empty()) {
+                    for (double v : ev) if (!std::isfinite(v)) { status = 2; return; }
+                    fix(ec, ev); st[EMPTY_COLS] += (long)ec.size(); changed = true;
+                }
+            }
+            // parallel rows
+            long merged = 0;
+            if (!changed && parallel_left) {
+                for (auto& pr : parallel_rows()) {
+                    int i = rows[std::get<0>(pr)], k = rows[std::get<1>(pr)];
+                    double lam = std::get<2>(pr);
+                    if (!(row_on[i] && row_on[k])) continue;
+                    double k_lo = lam > 0 ? lo[k] / lam : hi[k] / lam, k_hi = lam > 0 ? hi[k] / lam : lo[k] / lam;
+                    double new_lo = lo[i] >= k_lo ? lo[i] : k_lo, new_hi = hi[i] <= k_hi ? hi[i] : k_hi;
+                    double tl = FEAS_TOL * (std::isfinite(new_lo) ? 1.0 + std::fabs(new_lo) : 1.0);
+                    if (new_lo > new_hi + 1e3 * tl) { status = 1; return; }
+                    if (std::isfinite(new_hi)) {
+                        if (new_hi - new_lo > tl) continue;
+                        double v = std::isfinite(hi[i]) ? lo[i] : (std::isfinite(hi[k]) ? lo[k] / lam : new_lo);
+                        lo[i] = hi[i] = v;
+                    } else {
+                        lo[i] = new_lo;
+                    }
+                    row_on[k] = 0;
+                    merged++;
+                }
+            }
+            if (!changed && parallel_left) parallel_left--;
+            if (merged) { st[PARALLEL] += merged; continue; }
+            // probing
+            bool anyint = false;
+            for (int j : cols) if (isint[j]) { anyint = true; break; }
+            if (!changed && probes_left && probe_work > 0 && anyint) {
+                probes_left--;
+                // S as CSC (rows sorted within each column), as core.probe hands it to sm_probe
+                std::vector<int> cp(ns + 1, 0), ri(si.size());
+                std::vector<double> cv(si.size());
+                for (int k : si) cp[k + 1]++;
+                for (int k = 0; k < ns; ++k) cp[k + 1] += cp[k];
+                std::vector<int> pos(cp.begin(), cp.end() - 1);
+                for (int r = 0; r < ms; ++r)
+                    for (int t = sp[r]; t < sp[r + 1]; ++t) { int p = pos[si[t]]++; ri[p] = r; cv[p] = sv[t]; }
+                std::vector<double> zero(ns, 0.0), L(ns), U(ns);
+                std::vector<char> ints(ns);
+                for (int k = 0; k < ns; ++k) { L[k] = l[cols[k]]; U[k] = u[cols[k]]; ints[k] = isint[cols[k]]; }
+                sm::Solver s;
+                s.M.n = ns; s.M.m = ms;
+                s.M.cp = cp; s.M.ri = ri; s.M.cv = cv;
+                s.M.c = zero; s.M.lb = L; s.M.ub = U;
+                s.M.rlo = rlo; s.M.rhi = rhi;
+                s.M.isint.assign(ints.begin(), ints.end());
+                long fx = 0, tg = 0;
+                std::vector<std::array<int, 3>> eqv;
+                if (!s.probe(L, U, probe_work, probe_seconds, fx, tg, &eqv)) { status = 1; return; }
+                if (fx || tg) {
+                    for (int k = 0; k < ns; ++k) { l[cols[k]] = L[k]; u[cols[k]] = U[k]; }
+                    st[PROBE_FIXED] += fx; st[PROBE_TIGHTENED] += tg; changed = true;
+                    parallel_left = std::max(parallel_left, 1);
+                }
+                if (eqv.size() > (size_t)ns) eqv.resize(ns);
+                if (!eqv.empty()) {
+                    // x_k = x_r (sign 1) or 1 - x_r (sign -1), r found by following the chain k -> j -> ...
+                    std::vector<int> keys;
+                    std::vector<int> lj(n, -1), lsg(n, 0);
+                    for (auto& e : eqv) {
+                        int k = cols[e[0]];
+                        if (lj[k] < 0) keys.push_back(k);
+                        lj[k] = cols[e[1]]; lsg[k] = e[2];
+                    }
+                    std::vector<int> ks2, rs2; std::vector<double> sg2, b02;
+                    for (int k : keys) {
+                        int r = k, sg = 1;
+                        for (size_t guard = 0; lj[r] >= 0 && guard <= keys.size(); ++guard) { sg *= lsg[r]; r = lj[r]; }
+                        ks2.push_back(k); rs2.push_back(r); sg2.push_back((double)sg); b02.push_back(sg < 0 ? 1.0 : 0.0);
+                    }
+                    substitute(ks2, rs2, sg2, b02);
+                    for (size_t q = 0; q < ks2.size(); ++q) {
+                        int k = ks2[q], r = rs2[q];
+                        if (sg2[q] > 0) { l[r] = std::max(l[r], l[k]); u[r] = std::min(u[r], u[k]); }
+                        else { l[r] = std::max(l[r], 1.0 - u[k]); u[r] = std::min(u[r], 1.0 - l[k]); }
+                        col_on[k] = 0; cols_dirty = true;
+                        stack.push_back({k, sg2[q] < 0 ? 1.0 : 0.0, {r}, {sg2[q] < 0 ? 1.0 : -1.0}, 1.0});
+                    }
+                    st[PROBE_EQUIV] += (long)ks2.size(); changed = true;
+                }
+            }
+            if (!changed) break;
+        }
+    }
+};
+
+}  // namespace ps
+
+// Presolve (see ps::Presolver): the model rlo <= A x (<= rhi for the first n_eq rows, which are equalities),
+// A as sorted CSR without duplicates or zeros. Returns a handle; sizes = {status (0 reduced, 1 infeasible,
+// 2 unbounded), rows kept, columns kept, nonzeros kept, equality rows kept, substitutions, their total columns}.
+SM_API void* sm_presolve(int m, int n, int n_eq, const int* indptr, const int* indices, const double* data,
+                         const double* q, const double* c, const double* l, const double* u, const char* isint,
+                         double obj_const, int max_passes, double probe_work, double probe_seconds, long* sizes) {
+    auto* P = new ps::Presolver();
+    P->m = m; P->n = n;
+    P->ap.assign(indptr, indptr + m + 1);
+    P->aj.assign(indices, indices + indptr[m]);
+    P->ax.assign(data, data + indptr[m]);
+    P->lo.assign(q, q + m);
+    P->hi.assign(m, ps::INF);
+    for (int i = 0; i < n_eq; ++i) P->hi[i] = q[i];
+    P->c.assign(c, c + n); P->l.assign(l, l + n); P->u.assign(u, u + n);
+    P->isint.assign(isint, isint + n);
+    P->cnst = obj_const;
+    P->run(max_passes, probe_work, probe_seconds);
+    long kr = 0, kc = 0, nz = 0, ne = 0, sc = 0;
+    if (P->status == 0) {
+        for (int i = 0; i < m; ++i) if (P->row_on[i]) {
+            ++kr; ne += std::isfinite(P->hi[i]);
+            for (int e = P->ap[i]; e < P->ap[i + 1]; ++e) nz += P->col_on[P->aj[e]];
+        }
+        for (int j = 0; j < n; ++j) kc += P->col_on[j];
+    }
+    for (auto& s : P->stack) sc += (long)s.cols.size();
+    sizes[0] = P->status; sizes[1] = kr; sizes[2] = kc; sizes[3] = nz; sizes[4] = ne;
+    sizes[5] = (long)P->stack.size(); sizes[6] = sc;
+    return P;
+}
+
+// The presolved model (status 0): kept rows (equalities first, original indices) and columns, the reduced CSR
+// matrix and vectors, x_fixed (n), stats (ps::NSTAT), the objective constant and the substitution stack
+// (k, b, a and the columns / coefficients of each, concatenated with offsets st_ptr).
+SM_API void sm_presolve_get(void* handle, int* rows, int* cols, int* Kp, int* Ki, double* Kx, double* q, double* c,
+                            double* l, double* u, char* isint, double* x_fixed, double* stats, double* cnst,
+                            int* st_k, double* st_b, double* st_a, int* st_ptr, int* st_cols, double* st_coefs) {
+    auto* P = static_cast<ps::Presolver*>(handle);
+    bool ok = P->status == 0;                       // otherwise only x_fixed, stats, the constant and the stack
+    std::vector<int> colloc(P->n, -1);
+    int kc = 0;
+    for (int j = 0; j < P->n && ok; ++j) if (P->col_on[j]) { colloc[j] = kc; cols[kc++] = j; }
+    int r = 0, t = 0;
+    Kp[0] = 0;
+    for (int eq = 1; eq >= 0 && ok; --eq)
+        for (int i = 0; i < P->m; ++i) {
+            if (!P->row_on[i] || std::isfinite(P->hi[i]) != (bool)eq) continue;
+            rows[r] = i; q[r] = P->lo[i];
+            for (int e = P->ap[i]; e < P->ap[i + 1]; ++e) {
+                int jl = colloc[P->aj[e]];
+                if (jl >= 0) { Ki[t] = jl; Kx[t] = P->ax[e]; ++t; }
+            }
+            Kp[++r] = t;
+        }
+    for (int j = 0, k = 0; j < P->n; ++j) {
+        x_fixed[j] = P->x_fixed[j];
+        if (!ok || !P->col_on[j]) continue;
+        c[k] = P->c[j]; l[k] = P->l[j]; u[k] = P->u[j]; isint[k] = P->isint[j]; ++k;
+    }
+    for (int s = 0; s < ps::NSTAT; ++s) stats[s] = (double)P->st[s];
+    *cnst = P->cnst;
+    int off = 0;
+    st_ptr[0] = 0;
+    for (size_t s = 0; s < P->stack.size(); ++s) {
+        auto& e = P->stack[s];
+        st_k[s] = e.k; st_b[s] = e.b; st_a[s] = e.a;
+        for (size_t q2 = 0; q2 < e.cols.size(); ++q2) { st_cols[off] = e.cols[q2]; st_coefs[off] = e.coefs[q2]; ++off; }
+        st_ptr[s + 1] = off;
+    }
+}
+
+SM_API void sm_presolve_free(void* handle) { delete static_cast<ps::Presolver*>(handle); }
+
+// Scaling of the GPU engine (samadhan/pdlp.py: _scale) in place on a CSR matrix: iters passes of Ruiz equilibration
+// (row and column max norms), then one with the 1-norms. The same arithmetic in the same order as the numpy
+// version, so the same result.
+SM_API void sm_scale(int m, int n, const int* indptr, const int* indices, double* data, double* dr, double* dc,
+                     int iters) {
+    std::vector<double> rmax(m), cmax(n), rs(m), cs(n);
+    for (int i = 0; i < m; ++i) dr[i] = 1.0;
+    for (int j = 0; j < n; ++j) dc[j] = 1.0;
+    auto apply = [&]() {
+        for (int i = 0; i < m; ++i)
+            for (int t = indptr[i]; t < indptr[i + 1]; ++t) { data[t] = data[t] * rs[i]; data[t] = data[t] * cs[indices[t]]; }
+    };
+    for (int it = 0; it < iters; ++it) {
+        std::fill(rmax.begin(), rmax.end(), 0.0);
+        std::fill(cmax.begin(), cmax.end(), 0.0);
+        for (int i = 0; i < m; ++i)
+            for (int t = indptr[i]; t < indptr[i + 1]; ++t) {
+                double a = std::fabs(data[t]);
+                rmax[i] = std::max(rmax[i], a);
+                cmax[indices[t]] = std::max(cmax[indices[t]], a);
+            }
+        for (int i = 0; i < m; ++i) rs[i] = 1.0 / std::sqrt(rmax[i] > 0 ? rmax[i] : 1.0);
+        for (int j = 0; j < n; ++j) cs[j] = 1.0 / std::sqrt(cmax[j] > 0 ? cmax[j] : 1.0);
+        apply();
+        for (int i = 0; i < m; ++i) dr[i] *= rs[i];
+        for (int j = 0; j < n; ++j) dc[j] *= cs[j];
+    }
+    std::fill(rmax.begin(), rmax.end(), 0.0);       // now the 1-norms
+    std::fill(cmax.begin(), cmax.end(), 0.0);
+    for (int i = 0; i < m; ++i)
+        for (int t = indptr[i]; t < indptr[i + 1]; ++t) {
+            double a = std::fabs(data[t]);
+            rmax[i] += a;
+            cmax[indices[t]] += a;
+        }
+    for (int i = 0; i < m; ++i) rs[i] = 1.0 / std::sqrt(rmax[i] > 0 ? rmax[i] : 1.0);
+    for (int j = 0; j < n; ++j) cs[j] = 1.0 / std::sqrt(cmax[j] > 0 ? cmax[j] : 1.0);
+    apply();
+    for (int i = 0; i < m; ++i) dr[i] *= rs[i];
+    for (int j = 0; j < n; ++j) dc[j] *= cs[j];
 }

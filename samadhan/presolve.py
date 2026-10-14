@@ -168,7 +168,7 @@ def _parallel_rows(S):
     return pairs
 
 
-def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -> Presolved:
+def presolve_reference(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -> Presolved:
     """probe_work: probing budget per probing call, in row entries visited by the propagation (0: no probing);
     probe_seconds is only a safety net (the work budget keeps the result independent of the machine)."""
     m, n = lp.K.shape
@@ -377,6 +377,7 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
                 c = T.T @ c
                 A = sp.csr_matrix(A @ T)
                 A.eliminate_zeros()
+                A.sort_indices()                           # the product leaves each row's entries out of order
                 for k, j, b, aj, ak in zip(ks, js, bs, ajs, aks):
                     col_on[k] = False
                     stack.append((int(k), float(b), np.array([j]), np.array([aj]), float(ak)))
@@ -467,6 +468,7 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
                 c = T.T @ c
                 A = sp.csr_matrix(A @ T)
                 A.eliminate_zeros()
+                A.sort_indices()                           # the product leaves each row's entries out of order
                 for k, r, sg in zip(ks, rs, signs):         # the bounds of x_k now restrict x_r
                     if sg > 0:
                         l[r], u[r] = max(l[r], l[k]), min(u[r], u[k])
@@ -489,3 +491,57 @@ def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -
                   name=f"{lp.name} (presolved)")
     st.update(rows=(m, len(rows)), cols=(n, len(cols)))
     return Presolved("reduced", red, cols, x_fixed, st, rows[order], stack)
+
+
+STATS = ("passes", "fixed_cols", "empty_rows", "singleton_rows", "redundant_rows", "forcing_rows", "tightened",
+         "free_singletons", "dual_fixed", "empty_cols", "probe_fixed", "probe_tightened", "probe_equiv", "parallel_rows",
+         "doubletons")
+
+
+def presolve(lp: LP, max_passes=50, probe_work=PROBE_WORK, probe_seconds=60.0) -> Presolved:
+    """presolve_reference run by the C++ core (cpp/samadhan_core.cpp, ps::Presolver): the same reductions in the same
+    order with the same arithmetic, so the same reduced model, many times faster on large models. The Python version
+    above stays the reference; the tests compare the two."""
+    import ctypes
+
+    from .core import _dp, _ip, _load
+    m, n = lp.K.shape
+    if lp.Q is not None and lp.Q.nnz:
+        return Presolved("reduced", lp, np.arange(n), np.zeros(n), dict(passes=0), np.arange(m))
+    A = sp.csr_matrix(lp.K, dtype=float, copy=True)
+    A.sum_duplicates()
+    A.eliminate_zeros()
+    A.sort_indices()
+    f = lambda a: np.ascontiguousarray(a, np.float64)
+    ip = lambda a: np.ascontiguousarray(a, np.int32)
+    isint = np.zeros(n, np.int8) if lp.integer is None else np.ascontiguousarray(lp.integer, np.int8)
+    cp = lambda a: a.ctypes.data_as(ctypes.POINTER(ctypes.c_char))
+    lib = _load()
+    sizes = (ctypes.c_long * 7)()
+    indptr, indices, data, q, c, l, u = ip(A.indptr), ip(A.indices), f(A.data), f(lp.q), f(lp.c), f(lp.l), f(lp.u)
+    h = lib.sm_presolve(m, n, int(lp.n_eq), _ip(indptr), _ip(indices), _dp(data), _dp(q), _dp(c), _dp(l), _dp(u),
+                        cp(isint), float(lp.obj_const), int(max_passes), float(probe_work), float(probe_seconds),
+                        sizes)
+    status, kr, kc, nnz, ne, ns, nsc = (int(v) for v in sizes)
+    rows, cols, Kp, Ki = (np.zeros(k, np.int32) for k in (kr, kc, kr + 1, nnz))
+    Kx, qr, cr, lr, ur = (np.zeros(k) for k in (nnz, kr, kc, kc, kc))
+    ir = np.zeros(kc, np.int8)
+    x_fixed, stats, cnst = np.zeros(n), np.zeros(len(STATS)), np.zeros(1)
+    sk, sptr, scols = np.zeros(ns, np.int32), np.zeros(ns + 1, np.int32), np.zeros(nsc, np.int32)
+    sb, sa, scoef = np.zeros(ns), np.zeros(ns), np.zeros(nsc)
+    lib.sm_presolve_get(h, _ip(rows), _ip(cols), _ip(Kp), _ip(Ki), _dp(Kx), _dp(qr), _dp(cr), _dp(lr), _dp(ur),
+                        cp(ir), _dp(x_fixed), _dp(stats), _dp(cnst), _ip(sk), _dp(sb), _dp(sa), _ip(sptr), _ip(scols),
+                        _dp(scoef))
+    lib.sm_presolve_free(h)
+    st = dict(zip(STATS, (int(v) for v in stats)))
+    if status:
+        return Presolved({1: "infeasible", 2: "unbounded"}[status], None, np.arange(0), x_fixed, st)
+    stack = [(int(sk[t]), float(sb[t]), scols[sptr[t]:sptr[t + 1]].astype(np.int64), scoef[sptr[t]:sptr[t + 1]],
+              float(sa[t])) for t in range(ns)]
+    cols = cols.astype(np.int64)
+    st.update(rows=(m, kr), cols=(n, kc))
+    names = [lp.col_names[j] for j in cols] if lp.col_names else []
+    red = replace(lp, c=cr, K=sp.csr_matrix((Kx, Ki, Kp), shape=(kr, kc)), q=qr, n_eq=ne, l=lr, u=ur,
+                  obj_const=float(cnst[0]), col_names=names,
+                  integer=ir.astype(bool) if lp.integer is not None else None, name=f"{lp.name} (presolved)")
+    return Presolved("reduced", red, cols, x_fixed, st, rows.astype(np.int64), stack)

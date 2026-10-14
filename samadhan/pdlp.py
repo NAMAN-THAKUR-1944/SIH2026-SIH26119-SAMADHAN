@@ -47,26 +47,46 @@ class Result:
 
 # --------------------------------------------------------------------------- preconditioning
 def _scale(K: sp.csr_matrix, ruiz_iters=10):
+    """Ruiz equilibration (row and column max norms, ruiz_iters passes), then one pass with the 1-norms
+    (Pock-Chambolle), on the stored values in place. Done by the C++ core (sm_scale), which does the same arithmetic
+    as the numpy code below (kept as the fallback), in the same order."""
     m, n = K.shape
+    Ks = sp.csr_matrix(K, dtype=np.float64, copy=True)
+    try:
+        from .core import _dp, _ip, _load
+        lib = _load()
+        Ks.indptr, Ks.indices = Ks.indptr.astype(np.int32), Ks.indices.astype(np.int32)
+        Ks.data = np.ascontiguousarray(Ks.data)
+        dr, dc = np.empty(m), np.empty(n)
+        lib.sm_scale(m, n, _ip(Ks.indptr), _ip(Ks.indices), _dp(Ks.data), _dp(dr), _dp(dc), ruiz_iters)
+        return Ks, dr, dc
+    except (OSError, RuntimeError, AttributeError):
+        pass
     dr = np.ones(m)
     dc = np.ones(n)
-    Ks = K.copy().tocsr()
-    Ks.data = Ks.data.astype(np.float64)
+    cnt = np.diff(Ks.indptr)
+    rowid = np.repeat(np.arange(m), cnt)
+    col = Ks.indices
+    starts = Ks.indptr[:-1][cnt > 0]
     for _ in range(ruiz_iters):
-        absK = abs(Ks)
-        rmax = np.asarray(absK.max(axis=1).todense()).ravel() if m else np.zeros(0)
-        cmax = np.asarray(absK.max(axis=0).todense()).ravel()
+        a = np.abs(Ks.data)
+        rmax, cmax = np.zeros(m), np.zeros(n)
+        if len(starts):
+            rmax[cnt > 0] = np.maximum.reduceat(a, starts)
+        np.maximum.at(cmax, col, a)
         rs = 1.0 / np.sqrt(np.where(rmax > 0, rmax, 1.0))
         cs = 1.0 / np.sqrt(np.where(cmax > 0, cmax, 1.0))
-        Ks = sp.diags(rs) @ Ks @ sp.diags(cs)
+        Ks.data *= rs[rowid]
+        Ks.data *= cs[col]
         dr *= rs
         dc *= cs
-    absK = abs(Ks)
-    rsum = np.asarray(absK.sum(axis=1)).ravel()
-    csum = np.asarray(absK.sum(axis=0)).ravel()
+    a = np.abs(Ks.data)
+    rsum = np.bincount(rowid, weights=a, minlength=m)
+    csum = np.bincount(col, weights=a, minlength=n)
     rs = 1.0 / np.sqrt(np.where(rsum > 0, rsum, 1.0))
     cs = 1.0 / np.sqrt(np.where(csum > 0, csum, 1.0))
-    Ks = (sp.diags(rs) @ Ks @ sp.diags(cs)).tocsr()
+    Ks.data *= rs[rowid]
+    Ks.data *= cs[col]
     return Ks, dr * rs, dc * cs
 
 

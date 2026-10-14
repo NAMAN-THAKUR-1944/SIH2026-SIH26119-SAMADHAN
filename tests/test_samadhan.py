@@ -506,6 +506,36 @@ def test_presolve_keeps_milp_optimum(seed):
     assert a.status == b.status == "optimal" and rel(a.obj, b.obj) < 1e-9 and violation(lp, a.x) < 1e-6
 
 
+def test_presolve_in_cpp_equals_reference():
+    """The C++ presolve (presolve) and the Python one it was ported from (presolve_reference) give the same reduced
+    model, the same postsolve stack and the same statistics, on LPs and MILPs that use every reduction (forcing and
+    singleton rows, propagation, free singletons, doubletons, dual fixing, parallel rows, probing)."""
+    import numpy as np
+
+    from samadhan.crude import crude_schedule
+    from samadhan.generate import refinery_plan
+    from samadhan.presolve import presolve, presolve_reference
+    models = [refinery_lp(R=3, C=5, P=4, D=20, T=4, seed=1), read_mps(TINY), read_mps(TINY_MILP),
+              crude_schedule(V=2, K=3, U=2, T=8, seed=1), refinery_plan(R=2, C=3, P=3, D=4, T=3, seed=1)]
+    models += [refinery_milp(R=4, C=8, P=3, D=6, seed=s) for s in range(3)]
+    eq = lambda a, b: np.array_equal(np.asarray(a), np.asarray(b))
+    for lp in models:
+        P, Q = presolve_reference(lp), presolve(lp)
+        assert P.status == Q.status and P.stats == Q.stats and eq(P.x_fixed, Q.x_fixed)
+        if P.status != "reduced":
+            continue
+        a, b = P.lp, Q.lp
+        assert eq(P.cols, Q.cols) and eq(P.rows, Q.rows) and a.n_eq == b.n_eq
+        assert all(eq(getattr(a, f), getattr(b, f)) for f in ("c", "q", "l", "u"))
+        Ka, Kb = a.K.tocsr(), b.K.tocsr()
+        Ka.sort_indices(); Kb.sort_indices()
+        assert eq(Ka.indptr, Kb.indptr) and eq(Ka.indices, Kb.indices) and eq(Ka.data, Kb.data)
+        assert abs(a.obj_const - b.obj_const) <= 1e-12 * (1 + abs(a.obj_const))
+        assert len(P.stack) == len(Q.stack)
+        for s, t in zip(P.stack, Q.stack):
+            assert s[0] == t[0] and s[1] == t[1] and s[4] == t[4] and eq(s[2], t[2]) and eq(s[3], t[3])
+
+
 @pytest.mark.parametrize("start", ["gpu", "gpu+duals", "zeros"])
 def test_crossover_gives_exact_vertex(start):
     """GPU solution (1e-4, with or without its duals) or a poor starting point -> optimal vertex, equal to HiGHS
