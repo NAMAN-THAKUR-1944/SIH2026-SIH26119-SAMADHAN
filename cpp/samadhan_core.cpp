@@ -605,24 +605,39 @@ struct Simplex {
     }
 
     // tableau row of basis position r:  rho = (row r of B^-1),  ar[j] = rho . a_j  for nonbasic j
+    // pivot row r of B^-1 [A -I] into ar. A sparse row (from a sparse row of B^-1) also lists its possibly nonzero
+    // positions in ar_nz (ar_full false); every other entry of ar is then zero.
+    std::vector<int> ar_nz;
+    std::vector<char> ar_mark;
+    bool ar_full = true;
     void row_alpha(int r) {
         rho.assign(m, 0.0); rho[r] = 1.0;
         F.btran(rho);
         int nz = 0;
         for (int i = 0; i < m; ++i) if (rho[i] != 0.0) ++nz;
-        if (nz * 10 < m) {                       // sparse rho: accumulate row by row
-            std::fill(ar.begin(), ar.begin() + n, 0.0);
+        if (nz * 10 < m) {                       // sparse rho: accumulate row by row (the nonzero positions known)
+            if (ar_full) std::fill(ar.begin(), ar.begin() + n, 0.0);
+            else for (int j : ar_nz) if (j < n) ar[j] = 0.0;
+            ar_mark.resize(n, 0);
+            ar_nz.clear();
             for (int i = 0; i < m; ++i) {
                 double v = rho[i];
                 if (v == 0.0) continue;
-                for (int t = rp[i]; t < rp[i + 1]; ++t) ar[rc[t]] += v * rv[t];
+                for (int t = rp[i]; t < rp[i + 1]; ++t) {
+                    ar[rc[t]] += v * rv[t];
+                    if (!ar_mark[rc[t]]) { ar_mark[rc[t]] = 1; ar_nz.push_back(rc[t]); }
+                }
             }
+            for (int j : ar_nz) ar_mark[j] = 0;
+            for (int i = 0; i < m; ++i) if (rho[i] != 0.0) ar_nz.push_back(n + i);
+            ar_full = false;
         } else {
             for (int j = 0; j < n; ++j) {
                 double s = 0.0;
                 for (int t = M->cp[j]; t < M->cp[j + 1]; ++t) s += rho[M->ri[t]] * M->cv[t];
                 ar[j] = s;
             }
+            ar_full = true;
         }
         for (int i = 0; i < m; ++i) ar[n + i] = -rho[i];
         for (int k = 0; k < m; ++k) ar[head[k]] = 0.0;
@@ -772,22 +787,43 @@ struct Simplex {
     // bounded primal simplex (phase 2) from a primal feasible basis: Devex pricing, Harris ratio test,
     // bound flips of boxed entering columns
     Result primal() {
+        auto t_start = Clock::now();
         wp.assign(N, 1.0);
+        // pricing candidates: the columns that may be dual infeasible, rebuilt after each refactorisation (which
+        // recomputes the reduced costs); a column joins when an update makes it infeasible and leaves when pricing
+        // finds it feasible. The entering column is the one a scan of all columns would choose.
+        std::vector<int> cand;
+        std::vector<char> incand(N, 0);
+        auto consider = [&](int j) {
+            if (!incand[j] && dual_infeas(j) > opt.tol_d) { incand[j] = 1; cand.push_back(j); }
+        };
+        auto rebuild = [&]() {
+            for (int j : cand) incand[j] = 0;
+            cand.clear();
+            for (int j = 0; j < N; ++j) consider(j);
+        };
+        rebuild();
         for (;;) {
-            if (want_refactor() && !refactor_basis()) return NUMERIC;
+            if (want_refactor()) {
+                if (!refactor_basis()) return NUMERIC;
+                rebuild();
+            }
             if (Clock::now() > t_end) return TIME_LIMIT;
             if (iters >= opt.max_lp_iter) return ITER_LIMIT;
             if (progress && iters % 5000 == 0) {
                 double obj = 0.0;
                 for (int j = 0; j < n; ++j) obj += c[j] * x[j];
-                std::printf("    primal simplex: iteration %ld, objective %.10g\n", iters, obj);
+                std::printf("    primal simplex: iteration %ld, objective %.10g, %zu candidates, %.1fs\n", iters, obj,
+                            cand.size(), seconds_since(t_start));
             }
             int q = -1; double best = 0.0;
-            for (int j = 0; j < N; ++j) {
+            for (size_t p = 0; p < cand.size();) {
+                int j = cand[p];
                 double v = dual_infeas(j);
-                if (v <= opt.tol_d) continue;
+                if (v <= opt.tol_d) { incand[j] = 0; cand[p] = cand.back(); cand.pop_back(); continue; }
                 double score = v * v / wp[j];
-                if (score > best) { best = score; q = j; }
+                if (score > best || (score == best && j < q)) { best = score; q = j; }
+                ++p;
             }
             if (q < 0) return OPTIMAL;
             double dir = st[q] == AT_UB || (st[q] == AT_ZERO && d[q] > 0) ? -1.0 : 1.0;
@@ -826,6 +862,7 @@ struct Simplex {
             if (std::fabs(acol[r] - ar[q]) > 1e-6 * (1.0 + std::fabs(ar[q]))) {
                 if (since_refactor == 0) return NUMERIC;
                 if (!refactor_basis()) return NUMERIC;
+                rebuild();
                 continue;
             }
             int jl = head[r];
@@ -833,20 +870,24 @@ struct Simplex {
             for (int k = 0; k < m; ++k) x[head[k]] -= t * dir * acol[k];
             x[q] += t * dir;
             x[jl] = leave_lb ? lb[jl] : ub[jl];
-            // reduced costs and Devex weights
+            // reduced costs and Devex weights (only where the pivot row is nonzero, when that is known)
             double theta = d[q] / ar[q];
             double wq = std::max(wp[q], 1.0);
-            for (int j = 0; j < N; ++j) {
-                if (st[j] == BASIC || j == q) continue;
+            auto update = [&](int j) {
+                if (st[j] == BASIC || j == q) return;
                 d[j] -= theta * ar[j];
                 double g = ar[j] / ar[q];
                 wp[j] = std::max(wp[j], g * g * wq);
-            }
+                consider(j);
+            };
+            if (ar_full) for (int j = 0; j < N; ++j) update(j);
+            else for (int j : ar_nz) update(j);
             d[q] = 0.0;
             d[jl] = -theta;
             wp[jl] = std::max(wq / (ar[q] * ar[q]), 1.0);
             st[jl] = leave_lb ? AT_LB : AT_UB;
             st[q] = BASIC;
+            consider(jl);
             head[r] = q;
             F.replace_column(r, acol[r]);         // a failed update leaves F stale: refactorised next
             eta_work += 3.0 * F.eta_nnz();
@@ -1221,6 +1262,7 @@ struct Solver {
     }
 
     int solve(Info& info, std::vector<double>& xout) {
+        obj_step = objective_step();         // integer columns keep their scale, so it holds for the scaled model
         scale_model();
         int status = solve_scaled(info, xout);
         for (size_t j = 0; j < xout.size(); ++j) xout[j] *= colscale[j];
@@ -1271,6 +1313,7 @@ struct Solver {
         // The pushed basis is primal feasible for the relaxed bounds: primal simplex on the true costs to the
         // optimum of the relaxed LP, then the real bounds back and the dual simplex from that dual feasible basis.
         Result r = S.primal();
+        double t_primal = seconds_since(t0);
         long it_primal = S.iters - it_push, it_dual = 0;
         S.restore_bounds();
         bool shifted = false;
@@ -1294,6 +1337,7 @@ struct Solver {
             }
         }
         long it_main = S.iters;
+        double t_main = seconds_since(t0);
         if (r == OPTIMAL) {
             S.w.assign(S.m, 1.0);
             r = S.solve();
@@ -1312,6 +1356,8 @@ struct Solver {
                         "pushed (%ld basis changes), %ld primal + %ld dual%s + %ld cleanup iterations, %.2f s\n",
                         crash_basic, n_relaxed, n_super, it_push, it_primal, it_dual,
                         shifted ? " (shifted costs)" : "", S.iters - it_main, seconds_since(t0));
+        if (opt.verbose)
+            std::printf("crossover: primal done %.1fs, dual done %.1fs, end %.1fs\n", t_primal, t_main, seconds_since(t0));
         info.lp_iters = (double)S.iters;
         info.time = seconds_since(t0);
         if (r != OPTIMAL) return r == TIME_LIMIT ? 3 : r == INFEASIBLE ? 1 : r == UNBOUNDED ? 2 : 5;
@@ -1341,7 +1387,45 @@ struct Solver {
 
     // prune threshold; +inf while there is no incumbent (avoids inf - inf = NaN)
     double cutoff() const {
-        return std::isfinite(inc_obj) ? inc_obj - opt.gap * std::max(1.0, std::fabs(inc_obj)) : INF;
+        if (!std::isfinite(inc_obj)) return INF;
+        double c = inc_obj - opt.gap * std::max(1.0, std::fabs(inc_obj));
+        // integral objective: a node whose bound exceeds the incumbent minus one step holds nothing better (the margin
+        // covers the LP's rounding)
+        if (obj_step > 0) c = std::min(c, inc_obj - obj_step + 1e-6 * std::max(1.0, std::fabs(inc_obj)));
+        return c;
+    }
+
+    // The objective takes only multiples of obj_step on integer points when every column with a cost is an integer
+    // column and every cost is an integer multiple of it (costs with up to six decimals); 0 if not. A dual bound may
+    // then be rounded up to the next multiple, and nodes pruned accordingly (HiGHS does the same).
+    double obj_step = 0.0;
+    double objective_step() const {
+        bool any = false;
+        for (int j = 0; j < M.n; ++j) {
+            if (M.c[j] == 0.0) continue;
+            if (!M.isint[j]) return 0.0;
+            any = true;
+        }
+        if (!any) return 0.0;
+        for (int k = 0; k <= 6; ++k) {
+            double f = std::pow(10.0, k);
+            long long g = 0;
+            bool ok = true;
+            for (int j = 0; j < M.n && ok; ++j) {
+                if (M.c[j] == 0.0) continue;
+                double v = std::fabs(M.c[j]) * f, r = std::round(v);
+                if (r < 1.0 || r > 1e12 || std::fabs(v - r) > 1e-9 * std::max(1.0, v)) { ok = false; break; }
+                long long a = (long long)r;
+                while (a) { long long t = g % a; g = a; a = t; }
+            }
+            if (ok && g > 0) return (double)g / f;
+        }
+        return 0.0;
+    }
+    // a dual bound rounded up to the next multiple of the objective step
+    double round_bound(double b) const {
+        if (obj_step <= 0 || !std::isfinite(b)) return b;
+        return std::ceil(b / obj_step - 1e-6) * obj_step;
     }
 
     void try_incumbent(const std::vector<double>& xs) {
@@ -1664,6 +1748,7 @@ struct Solver {
         sub.opt.cut_rounds = 0;
         sub.opt.verbose = 0;
         sub.opt.threads = 1;
+        sub.obj_step = obj_step;
         sub.inc = inc; sub.inc_obj = inc_obj;
         sub.rowscale = rowscale;                  // its rows are ours, scaled: same feasibility test
         sub.warm_st = &S.st; sub.warm_head = &S.head;
@@ -2857,7 +2942,7 @@ struct Solver {
         info.lp_iters = (double)iters;
         info.time = seconds_since(t0);
         info.obj = inc_obj;
-        info.bound = std::min(gb, inc_obj);
+        info.bound = std::min(round_bound(gb), inc_obj);
         info.gap = std::isfinite(inc_obj) ? (inc_obj - info.bound) / std::max(1.0, std::fabs(inc_obj)) : INF;
         if (std::isfinite(inc_obj)) xout = inc;
         if (status == 5) return 5;

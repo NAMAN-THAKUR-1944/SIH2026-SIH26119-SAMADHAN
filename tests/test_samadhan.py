@@ -289,6 +289,25 @@ def test_mps_objsense_max(tmp_path):
     assert r.status == "optimal" and lp.sense * r.obj == pytest.approx(11.0)       # x = 3, y = 1
 
 
+def test_core_integral_objective_rounds_bound():
+    """Set covering with integer costs: every solution costs a whole number, so the dual bound is rounded up to the
+    next integer (and nodes pruned by it); the proven optimum matches HiGHS and the bound equals it."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    from samadhan.core import solve_core
+    from samadhan.lp import LP
+    rng = np.random.default_rng(3)
+    m, n = 40, 60
+    A = (rng.random((m, n)) < 0.12).astype(float)
+    A[np.arange(m), rng.integers(0, n, m)] = 1.0                  # every row coverable
+    lp = LP(rng.integers(1, 6, n).astype(float), sp.csr_matrix(A), np.ones(m), 0, np.zeros(n), np.ones(n),
+            integer=np.ones(n, bool))
+    r = solve_core(lp, time_limit=60, gap=0.0)
+    assert r.status == "optimal" and r.obj == pytest.approx(solve_highs(lp)["obj"])
+    assert r.bound == pytest.approx(r.obj) and abs(r.bound - round(r.bound)) < 1e-9
+
+
 def test_core_rejects_points_hidden_by_row_scaling(tmp_path):
     """1e6 x - 1e6 y = 1 has no binary solution. Scaling divides the row by about 2^20, after which the rounded
     point (0, 0) misses it by only 1e-6; incumbents must be checked in the row's own units (MIPLIB 3 enigma)."""
