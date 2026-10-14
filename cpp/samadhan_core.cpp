@@ -1768,6 +1768,63 @@ struct Solver {
                         seconds_since(start), inc_obj < before ? "better incumbent" : "nothing better");
     }
 
+    // Local branching (Fischetti & Lodi 2003): the model with one more row, at most k of the binary columns flipped
+    // from the incumbent, solved by a nested branch-and-bound with a node and time budget and the incumbent as
+    // cutoff. Where RINS fixes the columns on which the LP point agrees with the incumbent, this searches the whole
+    // neighbourhood of the incumbent; it runs when a RINS call found nothing better. A neighbourhood searched to the
+    // end without a better solution is widened next time.
+    long lb_calls = 0;
+    double lb_time = 0.0;
+    int lb_k = 10;
+    void local_branching(double seconds, long nodes) {
+        if (!std::isfinite(inc_obj) || lb_time > 0.2 * opt.time_limit || Clock::now() >= S.t_end) return;
+        auto start = Clock::now();
+        double left = std::chrono::duration<double>(S.t_end - start).count();
+        if (left < 1.0) return;
+        std::vector<std::pair<int, double>> row;
+        int ones = 0;
+        for (int j = 0; j < M.n; ++j) {
+            if (!M.isint[j] || root_lb[j] != 0.0 || root_ub[j] != 1.0) continue;
+            if (inc[j] > 0.5) { row.push_back({j, -1.0}); ++ones; }
+            else row.push_back({j, 1.0});
+        }
+        if ((int)row.size() <= 2 * lb_k) return;
+        int k_used = lb_k;
+        Solver sub;
+        sub.M = M;
+        for (int j = 0; j < M.n; ++j) { sub.M.lb[j] = root_lb[j]; sub.M.ub[j] = root_ub[j]; }
+        sub.M.add_rows({row}, {-INF}, {(double)(lb_k - ones)});
+        sub.opt = opt;
+        sub.opt.time_limit = std::min(seconds, 0.5 * left);
+        sub.opt.node_limit = nodes;
+        sub.opt.features = opt.features & ~(128 | 8 | 512);
+        sub.opt.cut_rounds = 0;
+        sub.opt.verbose = 0;
+        sub.opt.threads = 1;
+        sub.obj_step = obj_step;
+        sub.inc = inc; sub.inc_obj = inc_obj;
+        sub.rowscale = rowscale;
+        // warm start from the node basis, the new row's logical basic
+        std::vector<int8_t> st2(S.st);
+        std::vector<int> head2(S.head);
+        st2.push_back(BASIC);
+        head2.push_back(M.n + M.m);
+        sub.warm_st = &st2; sub.warm_head = &head2;
+        Info sinfo;
+        std::vector<double> sx;
+        int status = sub.solve_scaled(sinfo, sx);
+        ++lb_calls;
+        double before = inc_obj;
+        if (sub.inc_obj < inc_obj - 1e-9) try_incumbent(sub.inc);
+        bool better = inc_obj < before;
+        if (!better && (status == 0 || status == 1)) lb_k = std::min(2 * lb_k, 80);   // searched to the end
+        lb_time += seconds_since(start);
+        if (opt.verbose)
+            std::printf("  local branching: %d binaries, k %d, %.0f nodes, %.2f s: %s\n", (int)row.size(),
+                        k_used, sinfo.nodes,
+                        seconds_since(start), better ? "better incumbent" : "nothing better");
+    }
+
     // Reduced-cost fixing with the root LP: a nonbasic integer column whose reduced cost shows that moving it by
     // k units would push the LP bound past the incumbent cannot move that far in any better solution, so its
     // global bound is tightened. Returns the number of tightened bounds.
@@ -2770,6 +2827,8 @@ struct Solver {
 
         // root heuristics: feasibility pump and a dive; with an incumbent, reduced-cost fixing and a guided dive
         long dive_budget = 1000 + 2L * S.m;
+        if (opt.threads > 1) root_heuristics_parallel(dive_budget);
+        else {
         if ((opt.features & 1) && !std::isfinite(inc_obj)) feasibility_pump(100, 10000 + 20L * S.m);
         if (opt.features & 2) dive(dive_budget);
         // when the cheap heuristics found nothing (a first incumbent that is merely feasible would stop the pump)
@@ -2779,6 +2838,8 @@ struct Solver {
             if (opt.verbose && fixed) std::printf("  reduced-cost fixing: %d bounds tightened\n", fixed);
             if (opt.features & 2) dive(dive_budget);
             if (opt.features & 128) rins(0.1 * opt.time_limit, 2000, S.objective());
+            if ((opt.features & 512) && !rins_last_ok) local_branching(0.05 * opt.time_limit, 1000);
+        }
         }
         if (opt.threads > 1) {
             long nodes = 0, iters = 0;
@@ -2889,7 +2950,10 @@ struct Solver {
             if ((nodes & 15) == 0) rounding_heuristic();
             if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
             if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 && rins_due())
+            {
                 rins(0.08 * opt.time_limit, 2000, global_bound());
+                if ((opt.features & 512) && !rins_last_ok) local_branching(0.05 * opt.time_limit, 1000);
+            }
             if ((opt.features & 64) && nodes % (std::isfinite(inc_obj) ? 500 : 250) == 60)
                 fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
             if (opt.verbose && (nodes % 2000) == 0) {
@@ -2949,6 +3013,74 @@ struct Solver {
         if (status == 3) return std::isfinite(inc_obj) ? 3 : 6;
         if (status == 4) return std::isfinite(inc_obj) ? 4 : 6;
         return std::isfinite(inc_obj) ? 0 : 1;
+    }
+
+    // a copy of the solver for another thread (its simplex points to the copy's own model)
+    std::unique_ptr<Solver> clone() const {
+        std::unique_ptr<Solver> s(new Solver(*this));
+        s->S.M = &s->M;
+        s->warm_st = nullptr; s->warm_head = nullptr;
+        s->opt.verbose = 0;
+        return s;
+    }
+
+    // With several threads the root heuristics run side by side, each on its own copy of the solver at the root LP,
+    // and their incumbents are merged in a fixed order, so the result does not depend on which finishes first.
+    // Without an incumbent: feasibility pump, dive and fix-and-propagate; with one, after reduced-cost fixing: a
+    // guided dive, RINS and local branching. (On one thread they run one after the other, fix-and-propagate only
+    // when the others found nothing and local branching only when RINS found nothing.) Each keeps its own budget;
+    // the time they take together counts once against the heuristics' share of the time limit.
+    void root_heuristics_parallel(long dive_budget) {
+        using Task = std::function<void(Solver&)>;
+        auto run = [&](const std::vector<Task>& tasks, const char* what) {
+            std::vector<std::unique_ptr<Solver>> C;
+            if (tasks.empty()) return C;
+            for (size_t t = 0; t < tasks.size(); ++t) C.push_back(clone());
+            int nt = std::max(1, std::min(opt.threads, (int)tasks.size()));
+            Crew crew(nt);
+            crew.run([&](int w) { for (size_t t = w; t < tasks.size(); t += nt) tasks[t](*C[t]); });
+            double h0 = heur_time, dh = 0.0;
+            for (size_t t = 0; t < tasks.size(); ++t) {
+                dh = std::max(dh, C[t]->heur_time - h0);
+                if (C[t]->inc_obj < inc_obj - 1e-9) {
+                    inc_obj = C[t]->inc_obj; inc = C[t]->inc;
+                    if (opt.verbose)
+                        std::printf("  incumbent %.10g  (root %s %zu, %.1fs)\n", inc_obj, what, t, seconds_since(t0));
+                }
+            }
+            heur_time = h0 + dh;
+            return C;
+        };
+        if (!std::isfinite(inc_obj)) {
+            std::vector<Task> a;
+            if (opt.features & 1) a.push_back([&](Solver& c) { c.feasibility_pump(100, 10000 + 20L * c.S.m); });
+            if (opt.features & 2) a.push_back([&](Solver& c) { c.dive(dive_budget); });
+            if (opt.features & 64)
+                a.push_back([&](Solver& c) { c.fix_and_propagate(std::max(1000L, 2 * c.root_lp_iters)); });
+            run(a, "heuristic");
+        }
+        if (!std::isfinite(inc_obj)) return;
+        int fixed = reduced_cost_fixing(S.objective());
+        if (opt.verbose && fixed) std::printf("  reduced-cost fixing: %d bounds tightened\n", fixed);
+        std::vector<Task> b;
+        int t_rins = -1, t_lb = -1;
+        if (opt.features & 2) b.push_back([&](Solver& c) { c.dive(dive_budget); });
+        if (opt.features & 128) {
+            t_rins = (int)b.size();
+            b.push_back([&](Solver& c) { c.rins(0.1 * opt.time_limit, 2000, c.S.objective()); });
+        }
+        if (opt.features & 512) {
+            t_lb = (int)b.size();
+            b.push_back([&](Solver& c) { c.local_branching(0.05 * opt.time_limit, 1000); });
+        }
+        auto C = run(b, "improvement heuristic");
+        // keep RINS's and local branching's state (their spacing and budgets) from the copies that ran them
+        if (t_rins >= 0) {
+            const Solver& r = *C[t_rins];
+            rins_calls = r.rins_calls; rins_off = r.rins_off; rins_time = r.rins_time; rins_last = r.rins_last;
+            rins_last_inc = r.rins_last_inc; rins_wait = r.rins_wait; rins_last_ok = r.rins_last_ok;
+        }
+        if (t_lb >= 0) { lb_calls = C[t_lb]->lb_calls; lb_time = C[t_lb]->lb_time; lb_k = C[t_lb]->lb_k; }
     }
 
     // ---- parallel tree search (opt.threads > 1)
@@ -3065,7 +3197,10 @@ struct Solver {
             if ((nodes & 15) == 0) rounding_heuristic();
             if ((opt.features & 2) && nodes % (std::isfinite(inc_obj) ? 2000 : 250) == 125) dive(500 + S.m);
             if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 && rins_due())
+            {
                 rins(0.08 * opt.time_limit, 2000, std::min(R.bound, cur_bound));
+                if ((opt.features & 512) && !rins_last_ok) local_branching(0.05 * opt.time_limit, 1000);
+            }
             if ((opt.features & 64) && nodes % (std::isfinite(inc_obj) ? 500 : 250) == 60)
                 fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
             double v = S.x[bv], f = v - std::floor(v);
