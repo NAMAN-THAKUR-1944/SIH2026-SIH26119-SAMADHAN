@@ -31,6 +31,7 @@
 #include <mutex>
 #include <queue>
 #include <random>
+#include <set>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -58,7 +59,7 @@ struct Options {
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
     int features = 507;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
                                  // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS,
-                                 // 256 flow cover cuts
+                                 // 256 flow cover cuts, 512 local branching, 1024 network cut-set cuts
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
@@ -2277,103 +2278,288 @@ struct Solver {
     // L2 is open, and then the capacities do (sum_{C1} x_j <= b' + lambda); if one of them is closed, the
     // capacities give sum_{C1} x_j <= sum u_j over the open ones. C1 is built from the arcs that are most open at
     // the LP point, per unit of capacity; L2 holds the arcs with lambda y*_j < x*_j.
-    int add_flowcover_round() {
+    // The flow cover cut of the relation  sum rel_z z <= b  over structural columns (z < n) and row activities
+    // (z = n + i, bounds rlo_i and rhi_i, value act_i; a row activity can only be an always-open arc). Returns the
+    // efficacy (violation over the norm; 0 if the cut is not violated enough or too badly scaled) and fills cut /
+    // cut_rhs over the structural columns (row activities expanded into their rows).
+    std::vector<double> fc_dense;
+    std::vector<char> fc_mark;
+    double flowcover_from_relation(const std::vector<std::pair<int, double>>& rel, double b, const std::vector<double>& act,
+                                   std::vector<std::pair<int, double>>& cut, double& cut_rhs) {
         int n = M.n;
-        if ((int)vub.size() != n) prepare_mir();
         auto is_bin = [&](int j) { return M.isint[j] && root_lb[j] == 0.0 && root_ub[j] == 1.0; };
         struct Arc { int z; int y; double a; double shift; double u; double xv; double yv; bool out; };
         std::vector<Arc> arcs;
+        bool has_switch = false;
+        for (auto& e : rel) {
+            int j = e.first;
+            double a = e.second, aa = std::fabs(a);
+            if (a == 0.0) continue;
+            if (j < n && is_bin(j)) {
+                arcs.push_back({j, j, a, 0.0, aa, aa * S.x[j], S.x[j], a < 0});
+                has_switch = true;
+            } else if (j < n && !M.isint[j] && vub[j].y >= 0 && root_lb[j] == 0.0) {
+                double v = std::min(vub[j].u, root_ub[j]);           // z <= min(v, ub) y
+                arcs.push_back({j, vub[j].y, a, 0.0, aa * v, aa * S.x[j], S.x[vub[j].y], a < 0});
+                has_switch = true;
+            } else {
+                double l = j < n ? root_lb[j] : M.rlo[j - n], u = j < n ? root_ub[j] : M.rhi[j - n];
+                double x = j < n ? S.x[j] : act[j - n];
+                if (!std::isfinite(l)) return 0.0;
+                b -= a * l;
+                double cap = std::isfinite(u) ? aa * (u - l) : INF;
+                arcs.push_back({j, -1, a, l, cap, aa * std::max(x - l, 0.0), 1.0, a < 0});
+            }
+        }
+        if (!has_switch || arcs.size() < 2) return 0.0;
+        // flow cover from the inflow arcs: most open first, per unit of capacity
         std::vector<int> c1;
-        std::vector<double> dense(n, 0.0);
-        std::vector<char> mark(n, 0);
+        for (int t = 0; t < (int)arcs.size(); ++t)
+            if (!arcs[t].out && std::isfinite(arcs[t].u) && arcs[t].u > 1e-9) c1.push_back(t);
+        std::sort(c1.begin(), c1.end(), [&](int p, int q) {
+            double rp = (1.0 - arcs[p].yv) / arcs[p].u, rq = (1.0 - arcs[q].yv) / arcs[q].u;
+            return rp < rq || (rp == rq && arcs[p].u > arcs[q].u);
+        });
+        double cap = 0.0, tol = 1e-9 * (1.0 + std::fabs(b));
+        size_t k = 0;
+        while (k < c1.size() && cap <= b + tol) cap += arcs[c1[k++]].u;
+        if (cap <= b + tol) return 0.0;
+        c1.resize(k);
+        double lambda = cap - b;
+        if (lambda <= 1e-6 * (1.0 + std::fabs(b))) return 0.0;
+        // the cut over the arcs, then over the original columns:  sum coef z <= rhs
+        double rhs = b;
+        int nz_all = n + m_orig;
+        if ((int)fc_dense.size() < nz_all) { fc_dense.assign(nz_all, 0.0); fc_mark.assign(nz_all, 0); }
         std::vector<int> nz;
+        auto add = [&](int j, double c) {
+            if (!fc_mark[j]) { fc_mark[j] = 1; nz.push_back(j); fc_dense[j] = 0.0; }
+            fc_dense[j] += c;
+        };
+        auto add_flow = [&](const Arc& r, double c) {           // c * x_arc
+            double aa = std::fabs(r.a);
+            add(r.z, c * aa);                                    // x_arc = |a| (z - shift)
+            rhs += c * aa * r.shift;
+        };
+        std::vector<char> in_c1(arcs.size(), 0);
+        for (int t : c1) in_c1[t] = 1;
+        for (int t = 0; t < (int)arcs.size(); ++t) {
+            const Arc& r = arcs[t];
+            if (!r.out) {
+                if (!in_c1[t]) continue;                         // inflow outside the cover: coefficient 0
+                add_flow(r, 1.0);
+                double d = std::max(r.u - lambda, 0.0);
+                if (d > 0.0 && r.y >= 0) { add(r.y, -d); rhs -= d; }   // d (1 - y)
+            } else if (r.y >= 0 && lambda * r.yv < r.xv) {
+                add(r.y, -lambda);                               // L2: - lambda y
+            } else if (r.y < 0 && lambda < r.xv) {
+                rhs += lambda;                                   // L2 with switch 1: - lambda
+            } else {
+                add_flow(r, -1.0);                               // - x
+            }
+        }
+        // row activities into their rows
+        std::vector<int> rows_in;
+        for (int j : nz) if (j >= n) rows_in.push_back(j);
+        for (int z : rows_in) {
+            double c = fc_dense[z];
+            fc_mark[z] = 0;
+            if (c == 0.0) continue;
+            for (auto& e : rowsR[z - n]) add(e.first, c * e.second);
+        }
+        cut.clear();
+        double lhs = 0.0, nrm = 0.0, amax = 0.0, amin = INF;
+        for (int j : nz) {
+            if (j >= n) continue;
+            fc_mark[j] = 0;
+            double c = fc_dense[j];
+            if (std::fabs(c) < 1e-12) continue;
+            cut.push_back({j, c});
+            lhs += c * S.x[j]; nrm += c * c;
+            amax = std::max(amax, std::fabs(c)); amin = std::min(amin, std::fabs(c));
+        }
+        cut_rhs = rhs;
+        if (cut.empty() || amax / amin > 1e6) return 0.0;
+        double eff = (lhs - rhs) / std::sqrt(nrm);
+        if (eff < 1e-4 * (1.0 + std::fabs(rhs) / std::sqrt(nrm))) return 0.0;
+        return eff;
+    }
+
+    int add_flowcover_round() {
+        int n = M.n;
+        if ((int)vub.size() != n) prepare_mir();
         std::vector<std::vector<std::pair<int, double>>> cuts;
-        std::vector<double> lo, hi;
+        std::vector<double> lo, hi, act;
+        std::vector<std::pair<int, double>> rel, cut;
         for (int i = 0; i < m_orig && (int)cuts.size() < opt.max_cuts_per_round; ++i) {
             if (Clock::now() > S.t_end) break;
             for (int side = 0; side < 2; ++side) {
                 double b = side == 0 ? M.rhi[i] : -M.rlo[i];
                 if (!std::isfinite(b)) continue;
                 double sgn = side == 0 ? 1.0 : -1.0;
-                arcs.clear();
-                bool ok = true, has_switch = false;
-                for (auto& e : rowsR[i]) {
-                    int j = e.first;
-                    double a = sgn * e.second, aa = std::fabs(a);
-                    if (a == 0.0) continue;
-                    if (is_bin(j)) {
-                        arcs.push_back({j, j, a, 0.0, aa, aa * S.x[j], S.x[j], a < 0});
-                        has_switch = true;
-                    } else if (!M.isint[j] && vub[j].y >= 0 && root_lb[j] == 0.0) {
-                        double v = std::min(vub[j].u, root_ub[j]);           // z <= min(v, ub) y
-                        arcs.push_back({j, vub[j].y, a, 0.0, aa * v, aa * S.x[j], S.x[vub[j].y], a < 0});
-                        has_switch = true;
-                    } else {
-                        double l = root_lb[j];
-                        if (!std::isfinite(l)) { ok = false; break; }
-                        b -= a * l;
-                        double u = std::isfinite(root_ub[j]) ? aa * (root_ub[j] - l) : INF;
-                        arcs.push_back({j, -1, a, l, u, aa * std::max(S.x[j] - l, 0.0), 1.0, a < 0});
-                    }
+                rel.clear();
+                for (auto& e : rowsR[i]) rel.push_back({e.first, sgn * e.second});
+                double rhs = 0.0;
+                if (flowcover_from_relation(rel, b, act, cut, rhs) > 0.0) {
+                    cuts.push_back(cut); lo.push_back(-INF); hi.push_back(rhs);
                 }
-                if (!ok || !has_switch || arcs.size() < 2) continue;
-                // flow cover from the inflow arcs: most open first, per unit of capacity
-                c1.clear();
-                for (int t = 0; t < (int)arcs.size(); ++t)
-                    if (!arcs[t].out && std::isfinite(arcs[t].u) && arcs[t].u > 1e-9) c1.push_back(t);
-                std::sort(c1.begin(), c1.end(), [&](int p, int q) {
-                    double rp = (1.0 - arcs[p].yv) / arcs[p].u, rq = (1.0 - arcs[q].yv) / arcs[q].u;
-                    return rp < rq || (rp == rq && arcs[p].u > arcs[q].u);
-                });
-                double cap = 0.0, tol = 1e-9 * (1.0 + std::fabs(b));
-                size_t k = 0;
-                while (k < c1.size() && cap <= b + tol) cap += arcs[c1[k++]].u;
-                if (cap <= b + tol) continue;
-                c1.resize(k);
-                double lambda = cap - b;
-                if (lambda <= 1e-6 * (1.0 + std::fabs(b))) continue;
-                // the cut over the arcs, then over the original columns:  sum coef z <= rhs
-                double rhs = b;
-                nz.clear();
-                auto add = [&](int j, double c) {
-                    if (!mark[j]) { mark[j] = 1; nz.push_back(j); dense[j] = 0.0; }
-                    dense[j] += c;
-                };
-                auto add_flow = [&](const Arc& r, double c) {           // c * x_arc
-                    double aa = std::fabs(r.a);
-                    add(r.z, c * aa);                                    // x_arc = |a| (z - shift)
-                    rhs += c * aa * r.shift;
-                };
-                std::vector<char> in_c1(arcs.size(), 0);
-                for (int t : c1) in_c1[t] = 1;
-                for (int t = 0; t < (int)arcs.size(); ++t) {
-                    const Arc& r = arcs[t];
-                    if (!r.out) {
-                        if (!in_c1[t]) continue;                         // inflow outside the cover: coefficient 0
-                        add_flow(r, 1.0);
-                        double d = std::max(r.u - lambda, 0.0);
-                        if (d > 0.0 && r.y >= 0) { add(r.y, -d); rhs -= d; }   // d (1 - y)
-                    } else if (r.y >= 0 && lambda * r.yv < r.xv) {
-                        add(r.y, -lambda);                               // L2: - lambda y
-                    } else if (r.y < 0 && lambda < r.xv) {
-                        rhs += lambda;                                   // L2 with switch 1: - lambda
-                    } else {
-                        add_flow(r, -1.0);                               // - x
-                    }
+            }
+        }
+        if (cuts.empty()) return 0;
+        M.add_rows(cuts, lo, hi);
+        S.resize_to_model();
+        S.refactor_full();
+        return (int)cuts.size();
+    }
+
+    // ---- cut-set inequalities of fixed-charge networks
+    // Flow balance rows: equalities whose every column is an arc, a continuous column with lower bound 0 that appears
+    // in exactly two of them with coefficients +c and -c (in the model's own units). Summing the balances of a node
+    // set T cancels the arcs inside it:  sum_{arcs into T} c x - sum_{arcs out of T} c x = b(T).  If b(T) > 0 some
+    // arc into T carries flow, so its switch (x <= u y) is open:  sum_{switches of the arcs into T} y >= 1.
+    // An arc whose other end is a row outside the node set comes from (or goes to) one 'outside' node, whose balance is
+    // unknown: it counts as a supply. Separation: for every node with b > 0, a minimum cut on the LP values of the
+    // switches from a super source joined to the outside node and to every node with b < 0 (so T, the far side,
+    // holds no supply and b(T) > 0); a cut of value below 1 is violated.
+    struct NetArc { int col, from, to, y; };
+    bool net_ready = false;
+    std::vector<NetArc> net_arcs;
+    std::vector<double> net_b;
+    void prepare_network() {
+        net_ready = true;
+        net_arcs.clear(); net_b.clear();
+        int n = M.n;
+        if (colscale.size() != (size_t)n || rowscale.size() < (size_t)m_orig) return;    // (nested sub-MIPs)
+        if ((int)vub.size() != n) prepare_mir();
+        std::vector<char> cand(m_orig, 0);
+        for (int i = 0; i < m_orig; ++i) {
+            if (!(M.rlo[i] == M.rhi[i]) || !std::isfinite(M.rlo[i]) || rowsR[i].size() < 2) continue;
+            bool ok = true;
+            for (auto& e : rowsR[i]) if (M.isint[e.first] || root_lb[e.first] != 0.0) { ok = false; break; }
+            cand[i] = ok;
+        }
+        // columns with exactly two entries in candidate rows, opposite and of equal size in model units
+        std::vector<int> cnt(n, 0), r1(n, -1), r2(n, -1);
+        std::vector<double> a1(n, 0.0), a2(n, 0.0);
+        for (int i = 0; i < m_orig; ++i) {
+            if (!cand[i]) continue;
+            for (auto& e : rowsR[i]) {
+                int j = e.first;
+                double a = e.second / (rowscale[i] * colscale[j]);
+                if (cnt[j] == 0) { r1[j] = i; a1[j] = a; } else if (cnt[j] == 1) { r2[j] = i; a2[j] = a; }
+                cnt[j]++;
+            }
+        }
+        std::vector<char> arc(n, 0);
+        for (int j = 0; j < n; ++j)
+            arc[j] = cnt[j] == 2 && a1[j] * a2[j] < 0 && std::fabs(a1[j] + a2[j]) <= 1e-9 * std::fabs(a1[j]);
+        // node rows: candidates made of arcs only
+        std::vector<int> node(m_orig, -1);
+        int V = 0;
+        for (int i = 0; i < m_orig; ++i) {
+            if (!cand[i]) continue;
+            bool ok = true;
+            for (auto& e : rowsR[i]) if (!arc[e.first]) { ok = false; break; }
+            if (ok) node[i] = V++;
+        }
+        if (V < 2) return;
+        net_b.assign(V, 0.0);
+        for (int i = 0; i < m_orig; ++i) if (node[i] >= 0) net_b[node[i]] = M.rlo[i] / rowscale[i];
+        bool demand = false;
+        for (double b : net_b) demand = demand || b > 0;
+        if (!demand) return;                        // (the outside node can supply)
+        for (int j = 0; j < n; ++j) {
+            if (!arc[j] || (node[r1[j]] < 0 && node[r2[j]] < 0)) continue;
+            int n1 = node[r1[j]] >= 0 ? node[r1[j]] : V, n2 = node[r2[j]] >= 0 ? node[r2[j]] : V;   // V: outside
+            int to = a1[j] > 0 ? n1 : n2, from = a1[j] > 0 ? n2 : n1;
+            net_arcs.push_back({j, from, to, vub[j].y});
+        }
+        if (opt.verbose && !net_arcs.empty())
+            std::printf("  network: %d flow balance rows, %zu arcs\n", V, net_arcs.size());
+    }
+
+    int add_network_round() {
+        if (!net_ready) prepare_network();
+        if (net_arcs.empty()) return 0;
+        int V = (int)net_b.size(), outside = V, src = V + 1;
+        // residual graph (Dinic): edges in pairs, forward then backward
+        struct Edge { int to; double cap; };
+        std::vector<Edge> E;
+        std::vector<std::vector<int>> adj(V + 2);
+        std::vector<double> cap0;
+        auto edge = [&](int u, int v, double c) {
+            adj[u].push_back((int)E.size()); E.push_back({v, c}); cap0.push_back(c);
+            adj[v].push_back((int)E.size()); E.push_back({u, 0.0}); cap0.push_back(0.0);
+        };
+        const double BIG = 1e9;
+        for (auto& a : net_arcs) edge(a.from, a.to, a.y >= 0 ? std::max(S.x[a.y], 0.0) : BIG);
+        for (int v = 0; v < V; ++v) if (net_b[v] < 0) edge(src, v, BIG);
+        edge(src, outside, BIG);
+        std::vector<int> level(V + 2), it(V + 2), q;
+        auto bfs = [&](int t) {
+            std::fill(level.begin(), level.end(), -1);
+            q.assign(1, src); level[src] = 0;
+            for (size_t h = 0; h < q.size(); ++h)
+                for (int e : adj[q[h]]) if (E[e].cap > 1e-12 && level[E[e].to] < 0) { level[E[e].to] = level[q[h]] + 1; q.push_back(E[e].to); }
+            return level[t] >= 0;
+        };
+        std::function<double(int, int, double)> dfs = [&](int u, int t, double f) -> double {
+            if (u == t) return f;
+            for (int& k = it[u]; k < (int)adj[u].size(); ++k) {
+                int e = adj[u][k];
+                if (E[e].cap > 1e-12 && level[E[e].to] == level[u] + 1) {
+                    double d = dfs(E[e].to, t, std::min(f, E[e].cap));
+                    if (d > 0) { E[e].cap -= d; E[e ^ 1].cap += d; return d; }
                 }
+            }
+            return 0.0;
+        };
+        std::vector<std::vector<std::pair<int, double>>> cuts;
+        std::vector<double> lo, hi;
+        std::set<std::vector<int>> seen;
+        std::vector<char> mark(M.n, 0);
+        for (int t = 0; t < V && (int)cuts.size() < opt.max_cuts_per_round; ++t) {
+            if (net_b[t] <= 0) continue;
+            if (Clock::now() > S.t_end) break;
+            for (size_t e = 0; e < E.size(); ++e) E[e].cap = cap0[e];
+            double flow = 0.0;
+            while (flow < 1.0 && bfs(t)) {
+                std::fill(it.begin(), it.end(), 0);
+                double f;
+                while ((f = dfs(src, t, INF)) > 0) { flow += f; if (flow >= 1.0) break; }
+            }
+            if (flow >= 1.0 - 1e-6) continue;
+            // two minimum cuts: the one next to the source (T: what the source cannot reach in the residual graph)
+            // and the one next to the sink (T: what can still reach the sink), usually the stronger; neither T holds
+            // a supply node or the outside node (the source would then reach the sink)
+            std::vector<char> inT(V + 2, 0);
+            for (int side = 0; side < 2; ++side) {
+                if (side == 0) {
+                    bfs(t);
+                    for (int v = 0; v < V + 2; ++v) inT[v] = level[v] < 0;
+                } else {
+                    std::fill(inT.begin(), inT.end(), 0);
+                    q.assign(1, t); inT[t] = 1;
+                    for (size_t h = 0; h < q.size(); ++h)
+                        for (int e : adj[q[h]]) {                    // edge e^1 runs E[e].to -> q[h]
+                            int u = E[e].to;
+                            if (!inT[u] && E[e ^ 1].cap > 1e-12) { inT[u] = 1; q.push_back(u); }
+                        }
+                }
+                std::vector<int> sw;
+                bool open = false;
+                for (auto& a : net_arcs) {
+                    if (inT[a.from] || !inT[a.to]) continue;                 // arcs into T
+                    if (a.y < 0) { open = true; break; }                       // an arc without a switch: always open
+                    if (!mark[a.y]) { mark[a.y] = 1; sw.push_back(a.y); }
+                }
+                for (int y : sw) mark[y] = 0;
+                if (open || sw.empty()) continue;
+                std::sort(sw.begin(), sw.end());
+                if (!seen.insert(sw).second) continue;
                 std::vector<std::pair<int, double>> cut;
-                double lhs = 0.0, nrm = 0.0, amax = 0.0, amin = INF;
-                for (int j : nz) {
-                    mark[j] = 0;
-                    double c = dense[j];
-                    if (std::fabs(c) < 1e-12) continue;
-                    cut.push_back({j, c});
-                    lhs += c * S.x[j]; nrm += c * c;
-                    amax = std::max(amax, std::fabs(c)); amin = std::min(amin, std::fabs(c));
-                }
-                if (cut.empty() || amax / amin > 1e6) continue;
-                if ((lhs - rhs) / std::sqrt(nrm) < 1e-4 * (1.0 + std::fabs(rhs) / std::sqrt(nrm))) continue;
-                cuts.push_back(cut); lo.push_back(-INF); hi.push_back(rhs);
+                for (int y : sw) cut.push_back({y, -1.0});                   // - sum y <= -1
+                cuts.push_back(cut); lo.push_back(-INF); hi.push_back(-1.0);
             }
         }
         if (cuts.empty()) return 0;
@@ -2579,6 +2765,12 @@ struct Solver {
                 for (auto* R : {&rel, &neg}) {
                     double eff = mir_from_relation(*R, 0.0, act, dense, cut, cut_rhs);
                     if (eff > best) { best = eff; best_cut = cut; rhs_best = cut_rhs; }
+                    // and the flow cover of the aggregated relation (path aggregation in network models: summing
+                    // flow balances cancels the inner flows, and the cover then counts the arcs into the set)
+                    if (agg > 0 && (opt.features & 1024)) {
+                        eff = flowcover_from_relation(*R, 0.0, act, cut, cut_rhs);
+                        if (eff > best) { best = eff; best_cut = cut; rhs_best = cut_rhs; }
+                    }
                 }
                 if (best > 0.0) {
                     cuts.push_back(best_cut); lo.push_back(-INF); hi.push_back(rhs_best);
@@ -2793,14 +2985,41 @@ struct Solver {
         double prev = S.objective();
         // cutting gets at most 40% of the time limit; a round whose LP does not finish by then is rolled back
         auto cut_end = t0 + std::chrono::milliseconds((long long)(0.4 * opt.time_limit * 1000));
+        // network cut-set inequalities first, round after round while they are violated and the bound moves: they
+        // alone can close a fixed-charge network's gap, and among the other families they would get a few rounds
+        for (int nr = 0; (opt.features & 1024) && opt.cut_rounds > 0 && nr < 200 && Clock::now() < cut_end; ++nr) {
+            int m_before = M.m;
+            LPState before = save_lp();
+            int added = add_network_round();
+            if (!added) break;
+            auto t_end = S.t_end;
+            S.t_end = std::min(t_end, cut_end);
+            r = solve_root_lp(copy_iters);
+            S.t_end = t_end;
+            if (r != OPTIMAL) {
+                M.truncate_rows(m_before);
+                S.shrink_to_model();
+                restore_lp(before);
+                r = OPTIMAL;
+                break;
+            }
+            info.cuts += added;
+            double now = S.objective();
+            if (opt.verbose) std::printf("  network round %d: +%d cut-set cuts, bound %.10g\n", nr + 1, added, now);
+            bool stalled = now - prev < 1e-6 * (1.0 + std::fabs(now));
+            prev = now;
+            if (stalled && nr >= 4) break;
+        }
         for (int round = 0; round < opt.cut_rounds && Clock::now() < cut_end; ++round) {
             rounding_heuristic();
             int m_before = M.m;
             LPState before = save_lp();
-            int added = add_gomory_round();
-            if (opt.features & 4) added += add_cover_round();
-            if (opt.features & 32) added += add_mir_round();
-            if (opt.features & 256) added += add_flowcover_round();
+            int n_gom = add_gomory_round();
+            int n_cov = (opt.features & 4) ? add_cover_round() : 0;
+            int n_mir = (opt.features & 32) ? add_mir_round() : 0;
+            int n_flow = (opt.features & 256) ? add_flowcover_round() : 0;
+            int n_net = (opt.features & 1024) ? add_network_round() : 0;
+            int added = n_gom + n_cov + n_mir + n_flow + n_net;
             if (!added) break;
             auto t_end = S.t_end;
             S.t_end = std::min(t_end, cut_end);
@@ -2818,7 +3037,9 @@ struct Solver {
             }
             info.cuts += added;
             double now = S.objective();
-            if (opt.verbose) std::printf("  cut round %d: +%d cuts, bound %.10g\n", round + 1, added, now);
+            if (opt.verbose)
+                std::printf("  cut round %d: +%d cuts (Gomory %d, cover %d, c-MIR %d, flow cover %d, network %d), "
+                            "bound %.10g\n", round + 1, added, n_gom, n_cov, n_mir, n_flow, n_net, now);
             if (now - prev < 1e-4 * (1.0 + std::fabs(now))) { prev = now; break; }
             prev = now;
         }

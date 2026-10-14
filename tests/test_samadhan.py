@@ -160,7 +160,7 @@ def test_core_milp_matches_highs(seed):
     assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9
 
 
-@pytest.mark.parametrize("features", [0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 255, 507, 1019])
+@pytest.mark.parametrize("features", [0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 255, 507, 2047])
 def test_core_milp_every_feature(features):
     """Each branch-and-cut feature (pump, diving, covers, reliability branching, propagation, c-MIR cuts,
     fix-and-propagate, RINS) on its own and all together must reach the same proven optimum."""
@@ -287,6 +287,36 @@ def test_mps_objsense_max(tmp_path):
     assert lp.sense == -1 and list(lp.c) == [-3.0, -2.0]
     r = solve_core(lp)
     assert r.status == "optimal" and lp.sense * r.obj == pytest.approx(11.0)       # x = 3, y = 1
+
+
+def test_core_network_cut_set_cuts():
+    """Single-source fixed-charge network (flow balances, x <= U y on every arc): with the cut-set inequalities
+    (feature 1024) the proven optimum still matches HiGHS and the point is feasible."""
+    import numpy as np
+    import scipy.sparse as sp
+
+    from samadhan.core import solve_core
+    from samadhan.lp import LP
+    from samadhan.verify import violation
+    rng = np.random.default_rng(5)
+    V, U = 14, 100.0
+    arcs = sorted({(int(a), int(b)) for a, b in rng.integers(0, V, (60, 2)) if a != b})
+    arcs += [(v, v + 1) for v in range(V - 1)]                       # a path, so every sink can be reached
+    A = len(arcs)
+    demand = np.zeros(V)
+    demand[[3, 7, 11, 13]] = rng.integers(5, 30, 4)
+    demand[0] = -demand.sum()                                          # node 0 supplies everything
+    rows, cols, vals = [], [], []
+    for k, (a, b) in enumerate(arcs):                                  # inflow - outflow = demand
+        rows += [b, a]; cols += [k, k]; vals += [1.0, -1.0]
+    bal = sp.csr_matrix((vals, (rows, cols)), shape=(V, 2 * A))
+    vub = sp.hstack([-sp.identity(A), U * sp.identity(A)])            # U y - x >= 0
+    K = sp.vstack([bal, vub]).tocsr()
+    c = np.concatenate([rng.uniform(0.1, 1.0, A), rng.integers(10, 60, A).astype(float)])
+    lp = LP(c, K, np.concatenate([demand, np.zeros(A)]), V, np.zeros(2 * A),
+            np.concatenate([np.full(A, U), np.ones(A)]), integer=np.r_[np.zeros(A, bool), np.ones(A, bool)])
+    r = solve_core(lp, time_limit=60, gap=0.0, features=1531)
+    assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9 and violation(lp, r.x) < 1e-6
 
 
 def test_core_integral_objective_rounds_bound():
