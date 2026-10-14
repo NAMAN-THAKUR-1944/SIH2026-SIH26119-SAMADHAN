@@ -11,8 +11,8 @@
   },
   "samadhan": {
    "status": "optimal",
-   "time": 0.22210960000120394,
-   "setup": 2.3662383999999292,
+   "time": 0.17473950000021432,
+   "setup": 0.8025681000017357,
    "iters": 448,
    "obj": 255.99999915263925,
    "rel_p": 1.1951265153546241e-05,
@@ -26,12 +26,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 256.00123855252133,
-   "time": 2.05724549200022,
-   "solver_time": 0.960815508,
-   "read": 1.4655107109992969,
+   "time": 1.0766819439999988,
+   "solver_time": 0.630725003,
+   "read": 2.0441362539999997,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 0.7837325999280438,
@@ -73,12 +73,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 100.00577831093709,
-   "time": 0.7975786679999146,
-   "solver_time": 0.583753884,
-   "read": 0.994500146000064,
+   "time": 0.7891991979999986,
+   "solver_time": 0.569064051,
+   "read": 1.1611269910000033,
    "obj_err": 5.778310937628848e-05
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 0.27073749992996454,
@@ -120,12 +120,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": -300.0,
-   "time": 0.8351429370004553,
-   "solver_time": 0.33492797,
-   "read": 3.0559435889999804,
+   "time": 0.786757270999999,
+   "solver_time": 0.324012532,
+   "read": 3.6385759670000013,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 0.29195950005669147,
@@ -167,12 +167,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 2544438.1561470935,
-   "time": 5.756481452000116,
-   "solver_time": 5.575700982,
-   "read": 1.031251197000529,
+   "time": 5.597866557,
+   "solver_time": 5.413640863,
+   "read": 0.9519635520000023,
    "obj_err": 0.0007133643267296144
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 16.980643399991095,
@@ -222,12 +222,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 179.46816845454077,
-   "time": 4.528421259999959,
-   "solver_time": 3.839043502,
-   "read": 2.161022420000336,
+   "time": 4.415804520000002,
+   "solver_time": 3.712385498,
+   "read": 2.709942312999999,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 9.038716100039892,
@@ -269,12 +269,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 0.1058,
-   "time": 2.4930514039997433,
-   "solver_time": 1.934121075,
-   "read": 3.7605663730000742,
+   "time": 2.4685520099999962,
+   "solver_time": 1.888663646,
+   "read": 4.4062844559999945,
    "obj_err": 0.0
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 0.8280238999286667,
@@ -324,12 +324,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 2431233.1016335827,
-   "time": 24.710577343000296,
-   "solver_time": 24.382973642,
-   "read": 2.324341942000501,
+   "time": 24.852557857,
+   "solver_time": 24.46838643,
+   "read": 2.0405166600000015,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "time_limit",
    "time": 300.0340739999665,
@@ -371,12 +371,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 1041.0150978686147,
-   "time": 0.3350891780000893,
-   "solver_time": 0.290129054,
-   "read": 0.137089114000446,
+   "time": 0.29269964299999174,
+   "solver_time": 0.249729052,
+   "read": 0.15120984099999646,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 0.48330320010427386,
@@ -418,12 +418,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": -5042.13993442135,
-   "time": 7.644680399999743,
-   "solver_time": 7.161330876,
-   "read": 2.230064847999529,
+   "time": 7.918158646000009,
+   "solver_time": 7.44834927,
+   "read": 2.4798081050000036,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 21.488447100040503,
@@ -465,12 +465,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": -0.1709867290632801,
-   "time": 229.60942622200037,
-   "solver_time": 228.804732169,
-   "read": 2.8990453870001147,
+   "time": 230.462971322,
+   "solver_time": 229.540826393,
+   "read": 2.8959868029999996,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "time_limit",
    "time": 300.02453279995825,
@@ -512,12 +512,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": -0.17277533292306027,
-   "time": 21.96036195400029,
-   "solver_time": 21.402385778,
-   "read": 2.130803619999824,
+   "time": 22.442345210999974,
+   "solver_time": 21.850196345,
+   "read": 2.214076331000001,
    "obj_err": 9.829101757954928e-05
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 4.755706700030714,
@@ -567,12 +567,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 217.43083901075426,
-   "time": 1.6845668169999044,
-   "solver_time": 1.029828636,
-   "read": 3.350915996999902,
+   "time": 1.7627232159999835,
+   "solver_time": 1.059065441,
+   "read": 4.344418502999986,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 0.5519231000216678,
@@ -614,12 +614,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 3.3839923575139914,
-   "time": 2.6458641489998627,
-   "solver_time": 2.466955372,
-   "read": 1.253667220999887,
+   "time": 2.533730308000031,
+   "solver_time": 2.345961515,
+   "read": 1.6301307379999912,
    "obj_err": 2.0299327870783407e-05
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 6.05908829998225,
@@ -661,12 +661,12 @@
   "cuopt": {
    "status": "Optimal",
    "obj": 0.0,
-   "time": 1.8505062030008048,
-   "solver_time": 1.112846608,
-   "read": 3.386204581000129,
+   "time": 1.7522347880000098,
+   "solver_time": 0.985022463,
+   "read": 3.7105859359999727,
    "obj_err": null
   },
-  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), run 2026-10-11 23:17-00:26; HiGHS same run; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41; all on AC with a full battery",
+  "notes": "cuOpt 26.08 (nvidia/cuopt:latest-cu13) in Docker/WSL2, PDLP method, NVIDIA_DISABLE_REQUIRE=1 (driver 592.00 = CUDA 13.1, image CUDA 13.3; concurrent mode crashed), rerun 2026-10-14 09:39-09:45 after an untimed warm-up solve; HiGHS 2026-10-11 23:17-00:26; SAMADHAN with presolve on 0fc280d, 2026-10-12 09:28-09:41, datt256 rerun after a warm-up solve on 2026-10-12; all on AC with a full battery, not charging",
   "samadhan_no_presolve": {
    "status": "optimal",
    "time": 0.7096690000034869,
