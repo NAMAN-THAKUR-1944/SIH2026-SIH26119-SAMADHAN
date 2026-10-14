@@ -57,7 +57,7 @@ static double seconds_since(Clock::time_point t0) {
 struct Options {
     double tol_p = 1e-7, tol_d = 1e-7, tol_piv = 1e-7, int_tol = 1e-6, gap = 1e-6;
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
-    int features = 507;          // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
+    int features = 2043;         // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
                                  // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS,
                                  // 256 flow cover cuts, 512 local branching, 1024 network cut-set cuts
     double time_limit = 300.0;
@@ -1716,6 +1716,7 @@ struct Solver {
     double rins_last_inc = INF;
     double rins_wait = 0.0;
     bool rins_last_ok = false;
+    long rins_hits = 0;                          // RINS calls that improved the incumbent
     bool rins_due() {
         double wait = inc_obj < rins_last_inc - 1e-9 ? 0.1 * opt.time_limit : rins_wait;
         return seconds_since(rins_last) > wait;
@@ -1762,6 +1763,7 @@ struct Solver {
         if (sub.inc_obj < inc_obj - 1e-9) try_incumbent(sub.inc);
         rins_wait = inc_obj < before ? 0.1 * opt.time_limit : std::max(0.2 * opt.time_limit, 2 * rins_wait);
         rins_last_ok = inc_obj < before;
+        rins_hits += rins_last_ok;
         rins_last_inc = inc_obj;
         rins_time += seconds_since(start);
         if (opt.verbose)
@@ -1772,13 +1774,18 @@ struct Solver {
     // Local branching (Fischetti & Lodi 2003): the model with one more row, at most k of the binary columns flipped
     // from the incumbent, solved by a nested branch-and-bound with a node and time budget and the incumbent as
     // cutoff. Where RINS fixes the columns on which the LP point agrees with the incumbent, this searches the whole
-    // neighbourhood of the incumbent; it runs when a RINS call found nothing better. A neighbourhood searched to the
-    // end without a better solution is widened next time.
+    // neighbourhood of the incumbent. It runs when a RINS call found nothing better on a model where RINS has found
+    // better solutions before (neighbourhoods pay there), while the gap exceeds 1%, within 10% of the time limit,
+    // and stops after two calls in a row found nothing (on models whose tree is about to finish it only takes
+    // time). A neighbourhood searched to the end without a better solution is widened next time.
     long lb_calls = 0;
     double lb_time = 0.0;
-    int lb_k = 10;
-    void local_branching(double seconds, long nodes) {
-        if (!std::isfinite(inc_obj) || lb_time > 0.2 * opt.time_limit || Clock::now() >= S.t_end) return;
+    int lb_k = 10, lb_fails = 0;
+    void local_branching(double seconds, long nodes, double bound) {
+        if (!std::isfinite(inc_obj) || rins_hits == 0 || lb_fails >= 2 || lb_time > 0.1 * opt.time_limit ||
+            Clock::now() >= S.t_end)
+            return;
+        if (inc_obj - bound <= 0.01 * std::max(1.0, std::fabs(inc_obj))) return;
         auto start = Clock::now();
         double left = std::chrono::duration<double>(S.t_end - start).count();
         if (left < 1.0) return;
@@ -1819,6 +1826,7 @@ struct Solver {
         if (sub.inc_obj < inc_obj - 1e-9) try_incumbent(sub.inc);
         bool better = inc_obj < before;
         if (!better && (status == 0 || status == 1)) lb_k = std::min(2 * lb_k, 80);   // searched to the end
+        lb_fails = better ? 0 : lb_fails + 1;
         lb_time += seconds_since(start);
         if (opt.verbose)
             std::printf("  local branching: %d binaries, k %d, %.0f nodes, %.2f s: %s\n", (int)row.size(),
@@ -3059,7 +3067,7 @@ struct Solver {
             if (opt.verbose && fixed) std::printf("  reduced-cost fixing: %d bounds tightened\n", fixed);
             if (opt.features & 2) dive(dive_budget);
             if (opt.features & 128) rins(0.1 * opt.time_limit, 2000, S.objective());
-            if ((opt.features & 512) && !rins_last_ok) local_branching(0.05 * opt.time_limit, 1000);
+            if ((opt.features & 512) && !rins_last_ok) local_branching(0.05 * opt.time_limit, 1000, S.objective());
         }
         }
         if (opt.threads > 1) {
@@ -3173,7 +3181,8 @@ struct Solver {
             if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 && rins_due())
             {
                 rins(0.08 * opt.time_limit, 2000, global_bound());
-                if ((opt.features & 512) && !rins_last_ok) local_branching(0.05 * opt.time_limit, 1000);
+                if ((opt.features & 512) && !rins_last_ok)
+                    local_branching(0.05 * opt.time_limit, 1000, global_bound());
             }
             if ((opt.features & 64) && nodes % (std::isfinite(inc_obj) ? 500 : 250) == 60)
                 fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
@@ -3292,7 +3301,7 @@ struct Solver {
         }
         if (opt.features & 512) {
             t_lb = (int)b.size();
-            b.push_back([&](Solver& c) { c.local_branching(0.05 * opt.time_limit, 1000); });
+            b.push_back([&](Solver& c) { c.local_branching(0.05 * opt.time_limit, 1000, c.S.objective()); });
         }
         auto C = run(b, "improvement heuristic");
         // keep RINS's and local branching's state (their spacing and budgets) from the copies that ran them
@@ -3300,8 +3309,11 @@ struct Solver {
             const Solver& r = *C[t_rins];
             rins_calls = r.rins_calls; rins_off = r.rins_off; rins_time = r.rins_time; rins_last = r.rins_last;
             rins_last_inc = r.rins_last_inc; rins_wait = r.rins_wait; rins_last_ok = r.rins_last_ok;
+            rins_hits = r.rins_hits;
         }
-        if (t_lb >= 0) { lb_calls = C[t_lb]->lb_calls; lb_time = C[t_lb]->lb_time; lb_k = C[t_lb]->lb_k; }
+        if (t_lb >= 0) {
+            lb_calls = C[t_lb]->lb_calls; lb_time = C[t_lb]->lb_time; lb_k = C[t_lb]->lb_k; lb_fails = C[t_lb]->lb_fails;
+        }
     }
 
     // ---- parallel tree search (opt.threads > 1)
@@ -3420,7 +3432,8 @@ struct Solver {
             if ((opt.features & 128) && std::isfinite(inc_obj) && (nodes & 31) == 0 && rins_due())
             {
                 rins(0.08 * opt.time_limit, 2000, std::min(R.bound, cur_bound));
-                if ((opt.features & 512) && !rins_last_ok) local_branching(0.05 * opt.time_limit, 1000);
+                if ((opt.features & 512) && !rins_last_ok)
+                    local_branching(0.05 * opt.time_limit, 1000, std::min(R.bound, cur_bound));
             }
             if ((opt.features & 64) && nodes % (std::isfinite(inc_obj) ? 500 : 250) == 60)
                 fix_and_propagate(std::max(1000L, 2 * root_lp_iters));
