@@ -59,7 +59,8 @@ struct Options {
     double crash_tol = 1e-5;     // crossover: a value this close (relative) to a bound counts as at the bound
     int features = 2043;         // branch-and-cut: 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
                                  // 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS,
-                                 // 256 flow cover cuts, 512 local branching, 1024 network cut-set cuts
+                                 // 256 flow cover cuts, 512 local branching, 1024 network cut-set cuts,
+                                 // 2048 root heuristics side by side when threads > 1
     double time_limit = 300.0;
     long node_limit = 50000000;
     int cut_rounds = 8, max_cuts_per_round = 60, refactor = 100, verbose = 0;
@@ -3056,7 +3057,7 @@ struct Solver {
 
         // root heuristics: feasibility pump and a dive; with an incumbent, reduced-cost fixing and a guided dive
         long dive_budget = 1000 + 2L * S.m;
-        if (opt.threads > 1) root_heuristics_parallel(dive_budget);
+        if (opt.threads > 1 && (opt.features & 2048)) root_heuristics_parallel(dive_budget);
         else {
         if ((opt.features & 1) && !std::isfinite(inc_obj)) feasibility_pump(100, 10000 + 20L * S.m);
         if (opt.features & 2) dive(dive_budget);

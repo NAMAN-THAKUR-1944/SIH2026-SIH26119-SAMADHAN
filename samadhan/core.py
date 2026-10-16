@@ -24,11 +24,32 @@ LIBDIR = ROOT / "_lib"
 LIBNAME = "samadhan_core.dll" if os.name == "nt" else "libsamadhan_core.so"
 # branch-and-cut features (bit mask): 1 feasibility pump, 2 diving, 4 cover cuts, 8 reliability branching,
 # 16 node domain propagation, 32 c-MIR cuts, 64 fix-and-propagate, 128 RINS, 256 flow cover cuts,
-# 512 local branching, 1024 network cut-set cuts
+# 512 local branching, 1024 network cut-set cuts, 2048 root heuristics side by side when threads > 1
 FEATURES = 2043       # all but knapsack cover cuts, which cost more than they gave on MIPLIB 3 (ablation)
 STATUS = {0: "optimal", 1: "infeasible", 2: "unbounded", 3: "time_limit", 4: "node_limit", 5: "numerical_error",
           6: "no_solution_found"}
 _lib = None
+
+
+def _full_speed():
+    """Windows 11 runs a process it takes for background work (no window of its own: started from a service, a
+    scheduler or an editor's terminal) on the efficiency cores at reduced clock (EcoQoS) while the desktop is in use.
+    A solver run is compute-bound, so the process opts out of that execution-speed throttling (its own setting
+    only; nothing system-wide changes)."""
+    if os.name != "nt":
+        return False
+    try:
+        class State(ctypes.Structure):
+            _fields_ = [("Version", ctypes.c_ulong), ("ControlMask", ctypes.c_ulong), ("StateMask", ctypes.c_ulong)]
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.SetProcessInformation.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong]
+        s = State(1, 1, 0)       # version 1; control: execution speed; state: not throttled
+        return bool(k.SetProcessInformation(ctypes.c_void_p(-1), 4, ctypes.byref(s), ctypes.sizeof(s)))
+    except Exception:                                    # older Windows: nothing to opt out of
+        return False
+
+
+FULL_SPEED = _full_speed()
 
 
 def build(verbose=False):

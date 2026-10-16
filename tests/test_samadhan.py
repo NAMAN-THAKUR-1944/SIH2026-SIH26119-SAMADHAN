@@ -172,16 +172,18 @@ def test_core_milp_every_feature(features):
         assert r.status == "optimal" and rel(r.obj, solve_highs(lp)["obj"]) < 1e-9 and violation(lp, r.x) < 1e-6
 
 
-@pytest.mark.parametrize("threads", [2, 4])
-def test_core_parallel_tree_matches_highs_and_repeats(threads):
+@pytest.mark.parametrize("threads,flip", [(2, False), (4, False), (4, True)])
+def test_core_parallel_tree_matches_highs_and_repeats(threads, flip):
     """The parallel tree search reaches the HiGHS optimum with a feasible point, and a second run with the same
-    thread count searches the same tree (same node and simplex iteration counts)."""
-    from samadhan.core import solve_core
+    thread count searches the same tree (same node and simplex iteration counts); also with feature 2048 (root
+    heuristics side by side) switched the other way."""
+    from samadhan.core import FEATURES, solve_core
     from samadhan.crude import crude_schedule
     from samadhan.verify import violation
+    features = FEATURES ^ 2048 if flip else FEATURES
     models = [refinery_milp(R=4, C=8, P=3, D=6, seed=s) for s in (0, 1)] + [crude_schedule(V=2, K=3, U=2, T=8, seed=1)]
     for lp in models:
-        a, b = (solve_core(lp, time_limit=60, threads=threads) for _ in range(2))
+        a, b = (solve_core(lp, time_limit=60, threads=threads, features=features) for _ in range(2))
         assert a.status == "optimal" and rel(a.obj, solve_highs(lp)["obj"]) < 1e-6 and violation(lp, a.x) < 1e-6
         assert a.nodes > 0 and (a.nodes, a.lp_iters, a.obj) == (b.nodes, b.lp_iters, b.obj)
 
